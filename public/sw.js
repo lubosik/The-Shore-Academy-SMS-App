@@ -1,4 +1,4 @@
-const CACHE = 'vici-v1';
+const CACHE = 'shore-v1';
 const SHELL = ['/', '/styles.css', '/manifest.json'];
 self.addEventListener('install', e =>
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL).catch(() => {}))));
@@ -19,12 +19,12 @@ self.addEventListener('push', event => {
 
   const isCall = data.type === 'incoming_call';
 
-  const title = data.title || 'Vici SMS';
+  const title = data.title || 'Shore Inbox';
   const options = {
     body: data.body || '',
     icon: data.icon || '/icons/icon-192.png',
     badge: '/icons/icon-192.png',
-    tag: data.type || 'vici-sms',
+    tag: data.type || 'shore-inbox',
     renotify: true,
     data: { url: data.url || '/' },
     requireInteraction: isCall,

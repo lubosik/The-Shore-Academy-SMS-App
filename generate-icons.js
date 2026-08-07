@@ -1,30 +1,40 @@
-const { createCanvas } = require('canvas');
+// Generates the PWA icons from The Shore Academy badge mark.
+// The badge's outer ring is navy, so it is flattened onto brand cream
+// (#E6D6B8) — same treatment as the iOS app icon — with a small inset so
+// "maskable" (circular) cropping never clips the ring.
+//
+// Usage: node generate-icons.js
+const { createCanvas, loadImage } = require('canvas');
 const fs = require('fs');
 const path = require('path');
 
-function generateIcon(size) {
+const SOURCE = process.env.SHORE_LOGO ||
+  '/Users/ghost/Downloads/The Shore Academy Logo Removed.png';
+const CREAM = '#E6D6B8';
+
+function generateIcon(logo, size) {
   const canvas = createCanvas(size, size);
   const ctx = canvas.getContext('2d');
 
-  // Background circle
-  ctx.fillStyle = '#16a34a';
-  ctx.beginPath();
-  ctx.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2);
-  ctx.fill();
+  // Flatten onto cream — no transparency survives.
+  ctx.fillStyle = CREAM;
+  ctx.fillRect(0, 0, size, size);
 
-  // White "V"
-  ctx.fillStyle = '#ffffff';
-  ctx.font = `bold ${Math.floor(size * 0.55)}px Arial`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText('V', size / 2, size / 2 + size * 0.03);
+  // Inset the badge so maskable crops keep the full ring visible.
+  const inset = Math.round(size * 0.1);
+  const drawSize = size - inset * 2;
+  ctx.drawImage(logo, inset, inset, drawSize, drawSize);
 
   return canvas.toBuffer('image/png');
 }
 
-const iconsDir = path.join(__dirname, 'public', 'icons');
-if (!fs.existsSync(iconsDir)) fs.mkdirSync(iconsDir, { recursive: true });
+(async () => {
+  const logo = await loadImage(SOURCE);
+  const iconsDir = path.join(__dirname, 'public', 'icons');
+  if (!fs.existsSync(iconsDir)) fs.mkdirSync(iconsDir, { recursive: true });
 
-fs.writeFileSync(path.join(iconsDir, 'icon-192.png'), generateIcon(192));
-fs.writeFileSync(path.join(iconsDir, 'icon-512.png'), generateIcon(512));
-console.log('Icons generated: icon-192.png, icon-512.png');
+  for (const size of [192, 512]) {
+    fs.writeFileSync(path.join(iconsDir, `icon-${size}.png`), generateIcon(logo, size));
+  }
+  console.log('Icons generated: icon-192.png, icon-512.png');
+})().catch(err => { console.error(err.message); process.exit(1); });

@@ -252,6 +252,115 @@ function ToastContainer({
 
 // ─── Login ───────────────────────────────────────────────────────────────────
 
+// Layered animated ocean waves behind the login form. Mirrors the iOS login
+// wave (ShoreTheme.waveDeep / waveMid / waveShallow). Canvas + rAF, scaled for
+// devicePixelRatio. Respects prefers-reduced-motion by drawing a single still
+// frame, and cancels the rAF loop + listeners on unmount.
+const WAVE_LAYERS = [
+// Shallow water at the back, deep navy at the front — opacity fakes depth.
+{
+  color: '#5E93B8',
+  opacity: 0.30,
+  amplitude: 0.045,
+  wavelength: 1.35,
+  speed: 0.22,
+  yOffset: 0.62,
+  phase: 0.0
+}, {
+  color: '#2E6288',
+  opacity: 0.45,
+  amplitude: 0.060,
+  wavelength: 1.05,
+  speed: -0.15,
+  yOffset: 0.70,
+  phase: 2.2
+}, {
+  color: '#123A5A',
+  opacity: 0.90,
+  amplitude: 0.075,
+  wavelength: 0.85,
+  speed: 0.10,
+  yOffset: 0.80,
+  phase: 4.4
+}];
+function WaveBackdrop() {
+  const canvasRef = useRef(null);
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    let rafId = null;
+    let width = 0,
+      height = 0;
+    const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+    function resize() {
+      const dpr = window.devicePixelRatio || 1;
+      width = canvas.clientWidth;
+      height = canvas.clientHeight;
+      canvas.width = Math.round(width * dpr);
+      canvas.height = Math.round(height * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+    function drawFrame(tSeconds) {
+      ctx.clearRect(0, 0, width, height);
+      for (const layer of WAVE_LAYERS) {
+        const amp = layer.amplitude * height;
+        const baseline = layer.yOffset * height;
+        const k = Math.PI * 2 / (layer.wavelength * width);
+        const phase = layer.phase + tSeconds * layer.speed * Math.PI * 2;
+        ctx.beginPath();
+        ctx.moveTo(0, baseline + Math.sin(phase) * amp);
+        const step = Math.max(8, width / 90);
+        for (let x = step; x <= width + step; x += step) {
+          // Two sine terms per layer so crests drift instead of marching
+          const y = baseline + Math.sin(x * k + phase) * amp + Math.sin(x * k * 0.5 - phase * 0.6) * amp * 0.4;
+          ctx.lineTo(x, y);
+        }
+        ctx.lineTo(width, height);
+        ctx.lineTo(0, height);
+        ctx.closePath();
+        ctx.globalAlpha = layer.opacity;
+        ctx.fillStyle = layer.color;
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
+    function loop(now) {
+      drawFrame(now / 1000);
+      rafId = requestAnimationFrame(loop);
+    }
+    function start() {
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+      }
+      resize();
+      if (motionQuery.matches) {
+        drawFrame(0); // still wave, no animation
+      } else {
+        rafId = requestAnimationFrame(loop);
+      }
+    }
+    function handleResize() {
+      resize();
+      if (motionQuery.matches) drawFrame(0);
+    }
+    start();
+    window.addEventListener('resize', handleResize);
+    const motionHandler = () => start();
+    motionQuery.addEventListener('change', motionHandler);
+    return () => {
+      if (rafId !== null) cancelAnimationFrame(rafId);
+      window.removeEventListener('resize', handleResize);
+      motionQuery.removeEventListener('change', motionHandler);
+    };
+  }, []);
+  return /*#__PURE__*/React.createElement("canvas", {
+    ref: canvasRef,
+    className: "wave-canvas",
+    "aria-hidden": "true"
+  });
+}
 function LoginScreen({
   onLogin
 }) {
@@ -276,13 +385,13 @@ function LoginScreen({
   }
   return /*#__PURE__*/React.createElement("div", {
     className: "login-screen"
-  }, /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement(WaveBackdrop, null), /*#__PURE__*/React.createElement("div", {
     className: "login-card"
   }, /*#__PURE__*/React.createElement("div", {
     className: "login-logo"
-  }, "VICI", /*#__PURE__*/React.createElement("small", null, "// SMS")), /*#__PURE__*/React.createElement("div", {
+  }, "The Shore Academy"), /*#__PURE__*/React.createElement("div", {
     className: "login-subtitle"
-  }, "Secure Inbox Access"), /*#__PURE__*/React.createElement("form", {
+  }, "Team Inbox"), /*#__PURE__*/React.createElement("form", {
     onSubmit: handleSubmit
   }, /*#__PURE__*/React.createElement("div", {
     className: "input-wrap"
@@ -303,316 +412,16 @@ function LoginScreen({
   }, loading ? /*#__PURE__*/React.createElement("span", {
     className: "spinner",
     style: {
-      borderTopColor: '#030712'
+      borderTopColor: '#fff'
     }
-  }) : 'AUTHENTICATE'), /*#__PURE__*/React.createElement("div", {
+  }) : 'Sign In'), /*#__PURE__*/React.createElement("div", {
     className: "error-msg"
   }, error))));
 }
 
-// ─── Order Card (inside modal) ────────────────────────────────────────────────
+// ─── Shore Pinned Card ────────────────────────────────────────────────────────
 
-function OrderCard({
-  order
-}) {
-  const smsDots = [{
-    sent: order.order_sms_sent,
-    title: 'Order confirmed SMS'
-  }, {
-    sent: order.shipped_sms_sent,
-    title: 'Shipped SMS'
-  }, {
-    sent: order.delivery_sms_sent,
-    title: 'Delivered SMS'
-  }];
-  return /*#__PURE__*/React.createElement("div", {
-    className: "order-card"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "order-card-header"
-  }, /*#__PURE__*/React.createElement("span", {
-    className: "order-num"
-  }, "#", order.woo_order_id || '—'), /*#__PURE__*/React.createElement("span", {
-    className: `order-badge ${order.status}`
-  }, order.status), /*#__PURE__*/React.createElement("span", {
-    className: "order-total"
-  }, "$", parseFloat(order.total || 0).toFixed(2))), (order.items || []).slice(0, 3).map((item, i) => /*#__PURE__*/React.createElement("div", {
-    key: i,
-    className: "order-item"
-  }, /*#__PURE__*/React.createElement("span", {
-    className: "order-item-qty"
-  }, "\xD7", item.quantity), item.name)), (order.items || []).length > 3 && /*#__PURE__*/React.createElement("div", {
-    className: "order-item",
-    style: {
-      color: 'var(--text3)'
-    }
-  }, "+", order.items.length - 3, " more items"), /*#__PURE__*/React.createElement("div", {
-    className: "order-footer"
-  }, /*#__PURE__*/React.createElement("span", {
-    className: "order-date"
-  }, formatDate(order.created_at)), order.tracking_number && /*#__PURE__*/React.createElement("span", {
-    className: "tracking-line"
-  }, "\uD83D\uDCE6 ", order.carrier?.toUpperCase(), " ", order.tracking_number), /*#__PURE__*/React.createElement("div", {
-    className: "sms-dots",
-    title: smsDots.map(d => d.title + ': ' + (d.sent ? '✓' : 'pending')).join('\n')
-  }, smsDots.map((d, i) => /*#__PURE__*/React.createElement("div", {
-    key: i,
-    className: `sms-dot ${d.sent ? 'sent' : 'unsent'}`
-  })))));
-}
-
-// ─── Suggestion Card ──────────────────────────────────────────────────────────
-
-function SuggestionCard({
-  s,
-  onSend,
-  onDismiss
-}) {
-  const [sending, setSending] = useState(false);
-  const [gone, setGone] = useState(false);
-  if (gone) return null;
-  return /*#__PURE__*/React.createElement("div", {
-    className: "suggestion-card"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "sug-type"
-  }, s.suggestion_type?.replace(/_/g, ' ')), /*#__PURE__*/React.createElement("div", {
-    className: "sug-reason"
-  }, s.suggestion_text), /*#__PURE__*/React.createElement("div", {
-    className: "sug-msg"
-  }, s.suggested_message), /*#__PURE__*/React.createElement("div", {
-    className: "sug-actions"
-  }, /*#__PURE__*/React.createElement("button", {
-    className: "btn-sug-send",
-    disabled: sending,
-    onClick: async () => {
-      setSending(true);
-      await onSend(s.id);
-      setSending(false);
-      setGone(true);
-    }
-  }, sending ? /*#__PURE__*/React.createElement("span", {
-    className: "spinner",
-    style: {
-      borderTopColor: '#030712'
-    }
-  }) : 'Send'), /*#__PURE__*/React.createElement("button", {
-    className: "btn-sug-dismiss",
-    onClick: () => {
-      onDismiss(s.id);
-      setGone(true);
-    }
-  }, "Dismiss")));
-}
-
-// ─── Contact Modal (3D popup) ─────────────────────────────────────────────────
-
-function ContactModal({
-  phone,
-  onClose,
-  onGoToMessages,
-  addToast
-}) {
-  const [profile, setProfile] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState('orders');
-  const [analysing, setAnalysing] = useState(false);
-  useEffect(() => {
-    setProfile(null);
-    setLoading(true);
-    setTab('orders');
-    api('GET', `/api/contacts/${encodeURIComponent(phone)}`).then(setProfile).catch(() => {}).finally(() => setLoading(false));
-  }, [phone]);
-
-  // Close on escape or backdrop click
-  useEffect(() => {
-    const handler = e => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [onClose]);
-  async function reanalyse() {
-    setAnalysing(true);
-    try {
-      await api('POST', `/api/intelligence/analyse/${encodeURIComponent(phone)}`);
-      const d = await api('GET', `/api/contacts/${encodeURIComponent(phone)}`);
-      setProfile(d);
-      addToast('Analysis updated');
-    } catch {
-      addToast('Analysis failed');
-    }
-    setAnalysing(false);
-  }
-  async function sendSuggestion(id) {
-    await api('POST', `/api/intelligence/campaigns/${id}/send`);
-    addToast('Message sent');
-    const d = await api('GET', `/api/contacts/${encodeURIComponent(phone)}`);
-    setProfile(d);
-  }
-  async function dismissSuggestion(id) {
-    await api('POST', `/api/intelligence/campaigns/${id}/dismiss`);
-  }
-  const intel = profile?.intelligence;
-  const suggestions = profile?.suggestions || [];
-  const latestOrderStatus = profile?.orders?.[0]?.status || 'none';
-  return /*#__PURE__*/React.createElement("div", {
-    className: "modal-overlay",
-    onClick: e => {
-      if (e.target === e.currentTarget) onClose();
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "modal-card"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "modal-header"
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      width: 30
-    }
-  }), /*#__PURE__*/React.createElement("button", {
-    className: "modal-close",
-    onClick: onClose
-  }, "\u2715")), loading && /*#__PURE__*/React.createElement("div", {
-    style: {
-      textAlign: 'center',
-      padding: '3rem'
-    }
-  }, /*#__PURE__*/React.createElement("span", {
-    className: "spinner",
-    style: {
-      width: '24px',
-      height: '24px'
-    }
-  })), !loading && profile && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
-    className: "modal-identity"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "modal-avatar"
-  }, getInitials(profile)), /*#__PURE__*/React.createElement("div", {
-    className: "modal-info"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "modal-name"
-  }, profile.name || 'Unknown'), /*#__PURE__*/React.createElement("div", {
-    className: "modal-phone"
-  }, profile.phone), profile.email && /*#__PURE__*/React.createElement("div", {
-    className: "modal-email"
-  }, profile.email), (profile.city || profile.state) && /*#__PURE__*/React.createElement("div", {
-    className: "modal-location"
-  }, [profile.city, profile.state, profile.country].filter(Boolean).join(', ')))), /*#__PURE__*/React.createElement("div", {
-    className: "modal-stats"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "modal-stat"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "modal-stat-val"
-  }, profile.total_orders), /*#__PURE__*/React.createElement("div", {
-    className: "modal-stat-label"
-  }, "Orders")), /*#__PURE__*/React.createElement("div", {
-    className: "modal-stat"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "modal-stat-val"
-  }, "$", profile.total_spent?.toFixed(0) || '0'), /*#__PURE__*/React.createElement("div", {
-    className: "modal-stat-label"
-  }, "Spent")), /*#__PURE__*/React.createElement("div", {
-    className: "modal-stat"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "modal-stat-val",
-    style: {
-      fontSize: '0.75rem'
-    }
-  }, profile.orders?.[0] ? relativeTime(profile.orders[0].created_at) : '—'), /*#__PURE__*/React.createElement("div", {
-    className: "modal-stat-label"
-  }, "Last Order"))), /*#__PURE__*/React.createElement("div", {
-    className: "modal-tabs"
-  }, /*#__PURE__*/React.createElement("button", {
-    className: `modal-tab${tab === 'orders' ? ' active' : ''}`,
-    onClick: () => setTab('orders')
-  }, "Orders ", profile.orders?.length > 0 && `(${profile.orders.length})`), /*#__PURE__*/React.createElement("button", {
-    className: `modal-tab${tab === 'intel' ? ' active' : ''}`,
-    onClick: () => setTab('intel')
-  }, "Intelligence")), /*#__PURE__*/React.createElement("div", {
-    className: "modal-body"
-  }, tab === 'orders' && /*#__PURE__*/React.createElement(React.Fragment, null, profile.orders.length === 0 ? /*#__PURE__*/React.createElement("div", {
-    className: "orders-empty"
-  }, "No orders found.", /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("span", {
-    style: {
-      color: 'var(--text3)',
-      fontSize: '0.75rem'
-    }
-  }, "Click \u21BB WOO to sync WooCommerce orders.")) : profile.orders.map(order => /*#__PURE__*/React.createElement(OrderCard, {
-    key: order.id,
-    order: order
-  }))), tab === 'intel' && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
-    className: "reanalyse-row"
-  }, /*#__PURE__*/React.createElement("button", {
-    className: "reanalyse-btn",
-    onClick: reanalyse,
-    disabled: analysing
-  }, analysing ? /*#__PURE__*/React.createElement("span", {
-    className: "spinner"
-  }) : '↺ Re-analyse'), intel?.last_analysed && /*#__PURE__*/React.createElement("span", {
-    className: "last-analysed-txt"
-  }, "Last: ", relativeTime(intel.last_analysed))), !intel ? /*#__PURE__*/React.createElement("div", {
-    className: "intel-summary",
-    style: {
-      color: 'var(--text3)'
-    }
-  }, "No analysis yet. Send this contact a message, then click re-analyse.") : /*#__PURE__*/React.createElement(React.Fragment, null, intel.raw_summary && /*#__PURE__*/React.createElement("div", {
-    className: "intel-section"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "intel-label"
-  }, "AI Summary"), /*#__PURE__*/React.createElement("div", {
-    className: "intel-summary"
-  }, intel.raw_summary)), intel.sentiment && /*#__PURE__*/React.createElement("div", {
-    className: "intel-section"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "intel-label"
-  }, "Sentiment"), /*#__PURE__*/React.createElement("span", {
-    className: `sentiment-badge ${intel.sentiment}`
-  }, intel.sentiment)), intel.inferred_interests?.length > 0 && /*#__PURE__*/React.createElement("div", {
-    className: "intel-section"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "intel-label"
-  }, "Interests"), intel.inferred_interests.map((x, i) => /*#__PURE__*/React.createElement("span", {
-    key: i,
-    className: "tag-chip green"
-  }, x))), intel.order_signals?.length > 0 && /*#__PURE__*/React.createElement("div", {
-    className: "intel-section"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "intel-label"
-  }, "Purchase Signals"), /*#__PURE__*/React.createElement("ul", {
-    className: "signal-list"
-  }, intel.order_signals.map((s, i) => /*#__PURE__*/React.createElement("li", {
-    key: i
-  }, s)))), intel.restock_interests?.length > 0 && /*#__PURE__*/React.createElement("div", {
-    className: "intel-section"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "intel-label"
-  }, "Restock Watch"), intel.restock_interests.map((x, i) => /*#__PURE__*/React.createElement("span", {
-    key: i,
-    className: "tag-chip orange"
-  }, x)))), suggestions.length > 0 && /*#__PURE__*/React.createElement("div", {
-    className: "intel-section"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "intel-label",
-    style: {
-      marginBottom: '0.625rem'
-    }
-  }, "Campaign Suggestions"), suggestions.map(s => /*#__PURE__*/React.createElement(SuggestionCard, {
-    key: s.id,
-    s: s,
-    onSend: sendSuggestion,
-    onDismiss: dismissSuggestion
-  }))))), /*#__PURE__*/React.createElement("div", {
-    className: "modal-footer"
-  }, /*#__PURE__*/React.createElement("button", {
-    className: "btn-message",
-    onClick: () => {
-      onGoToMessages(profile.phone);
-      onClose();
-    }
-  }, "Open Message Thread \u2192")))));
-}
-
-// ─── Vici Pinned Card ─────────────────────────────────────────────────────────
-
-function ViciModal({
+function ShoreModal({
   onClose
 }) {
   useEffect(() => {
@@ -642,7 +451,7 @@ function ViciModal({
       letterSpacing: '0.1em',
       padding: '0.15rem 0.5rem',
       background: 'var(--accent-dim)',
-      border: '1px solid rgba(0,245,160,0.2)',
+      border: '1px solid var(--border-bright)',
       borderRadius: 4
     }
   }, "PINNED \xB7 OUR NUMBER"), /*#__PURE__*/React.createElement("button", {
@@ -653,21 +462,20 @@ function ViciModal({
   }, /*#__PURE__*/React.createElement("div", {
     className: "modal-avatar",
     style: {
-      background: 'var(--accent-dim)',
       fontSize: '1.25rem'
     }
-  }, "V"), /*#__PURE__*/React.createElement("div", {
+  }, "S"), /*#__PURE__*/React.createElement("div", {
     className: "modal-info"
   }, /*#__PURE__*/React.createElement("div", {
     className: "modal-name"
-  }, "Vici Peptides"), /*#__PURE__*/React.createElement("div", {
+  }, "The Shore Academy"), /*#__PURE__*/React.createElement("div", {
     className: "modal-phone",
     style: {
       fontSize: '1rem',
       letterSpacing: '0.04em'
     }
-  }, "+1 (305) 404-3184"), /*#__PURE__*/React.createElement("a", {
-    href: "https://vicipeptides.com",
+  }, "+1 (561) 363-0929"), /*#__PURE__*/React.createElement("a", {
+    href: "https://theshoreacademy.com",
     target: "_blank",
     rel: "noopener noreferrer",
     style: {
@@ -678,7 +486,7 @@ function ViciModal({
       display: 'block',
       marginTop: 4
     }
-  }, "vicipeptides.com \u2197"))), /*#__PURE__*/React.createElement("div", {
+  }, "theshoreacademy.com \u2197"))), /*#__PURE__*/React.createElement("div", {
     style: {
       padding: '0.875rem 1.25rem',
       borderTop: '1px solid var(--border)',
@@ -686,24 +494,24 @@ function ViciModal({
       fontSize: '0.6875rem',
       fontFamily: 'var(--mono)'
     }
-  }, "// this is the number your customers text")));
+  }, "This is the number your families text")));
 }
-function ViciPinnedCard({
+function ShorePinnedCard({
   onClick
 }) {
   return /*#__PURE__*/React.createElement("div", {
-    className: "contact-card vici-card",
+    className: "contact-card shore-card",
     onClick: onClick
   }, /*#__PURE__*/React.createElement("div", {
-    className: "card-avatar vici-avatar"
-  }, "V"), /*#__PURE__*/React.createElement("div", {
+    className: "card-avatar shore-avatar"
+  }, "S"), /*#__PURE__*/React.createElement("div", {
     className: "card-name"
-  }, "Vici Peptides"), /*#__PURE__*/React.createElement("div", {
+  }, "The Shore Academy"), /*#__PURE__*/React.createElement("div", {
     className: "card-phone"
-  }, "(305) 404-3184"), /*#__PURE__*/React.createElement("div", {
+  }, "(561) 363-0929"), /*#__PURE__*/React.createElement("div", {
     className: "card-meta"
   }, /*#__PURE__*/React.createElement("span", {
-    className: "vici-pin-badge"
+    className: "shore-pin-badge"
   }, "\uD83D\uDCCC OUR NUMBER")));
 }
 
@@ -732,7 +540,7 @@ function ContactsView({
   const [createError, setCreateError] = useState('');
   const [isEditing, setIsEditing] = useState(false);
   const [loadingDetail, setLoadingDetail] = useState(false);
-  const [showViciModal, setShowViciModal] = useState(false);
+  const [showShoreModal, setShowShoreModal] = useState(false);
 
   // Pre-fill from call log "Create Contact" button
   useEffect(() => {
@@ -750,10 +558,10 @@ function ContactsView({
     }
   }, [prefillPhone]);
 
-  // Sort by most recent activity: latest order date > last_seen > last message
+  // Sort by most recent activity: last_seen > last message
   const sorted = [...conversations].sort((a, b) => {
-    const aKey = Math.max(a.latest_order_date ? new Date(a.latest_order_date).getTime() : 0, a.last_seen ? new Date(a.last_seen).getTime() : 0, a.lastMessage?.created_at ? new Date(a.lastMessage.created_at).getTime() : 0);
-    const bKey = Math.max(b.latest_order_date ? new Date(b.latest_order_date).getTime() : 0, b.last_seen ? new Date(b.last_seen).getTime() : 0, b.lastMessage?.created_at ? new Date(b.lastMessage.created_at).getTime() : 0);
+    const aKey = Math.max(a.last_seen ? new Date(a.last_seen).getTime() : 0, a.lastMessage?.created_at ? new Date(a.lastMessage.created_at).getTime() : 0);
+    const bKey = Math.max(b.last_seen ? new Date(b.last_seen).getTime() : 0, b.lastMessage?.created_at ? new Date(b.lastMessage.created_at).getTime() : 0);
     return bKey - aKey;
   });
 
@@ -806,7 +614,8 @@ function ContactsView({
       if (onRefresh) await onRefresh();
       setSelectedContact({
         contact: data.contact,
-        orders: []
+        messages: [],
+        total_messages: 0
       });
     } catch (err) {
       setCreateError(err.message);
@@ -835,7 +644,7 @@ function ContactsView({
   }, showList && /*#__PURE__*/React.createElement("div", {
     style: {
       width: selectedContact && !isMobile ? '320px' : '100%',
-      borderRight: selectedContact && !isMobile ? '1px solid #2a2a2a' : 'none',
+      borderRight: selectedContact && !isMobile ? '1px solid var(--border)' : 'none',
       display: 'flex',
       flexDirection: 'column',
       flexShrink: 0,
@@ -844,7 +653,7 @@ function ContactsView({
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       padding: '14px 16px',
-      borderBottom: '1px solid #2a2a2a',
+      borderBottom: '1px solid var(--border)',
       display: 'flex',
       alignItems: 'center',
       gap: 10,
@@ -855,13 +664,13 @@ function ContactsView({
       flex: 1,
       fontSize: 15,
       fontWeight: 600,
-      color: '#fff'
+      color: 'var(--text)'
     }
   }, "Contacts", /*#__PURE__*/React.createElement("span", {
     style: {
       marginLeft: 8,
       fontSize: 12,
-      color: '#9ca3af',
+      color: 'var(--text2)',
       fontWeight: 400
     }
   }, conversations.length)), /*#__PURE__*/React.createElement("button", {
@@ -870,7 +679,7 @@ function ContactsView({
       setCreateError('');
     },
     style: {
-      background: '#16a34a',
+      background: 'var(--navy-fill)',
       border: 'none',
       borderRadius: 6,
       padding: '7px 14px',
@@ -882,7 +691,7 @@ function ContactsView({
   }, "+ New")), /*#__PURE__*/React.createElement("div", {
     style: {
       padding: '10px 16px',
-      borderBottom: '1px solid #2a2a2a',
+      borderBottom: '1px solid var(--border)',
       flexShrink: 0
     }
   }, /*#__PURE__*/React.createElement("input", {
@@ -892,11 +701,11 @@ function ContactsView({
     onChange: e => setSearch(e.target.value),
     style: {
       width: '100%',
-      background: '#1a1a1a',
-      border: '1px solid #2a2a2a',
+      background: 'var(--surface2)',
+      border: '1px solid var(--border)',
       borderRadius: 6,
       padding: '8px 12px',
-      color: '#fff',
+      color: 'var(--text)',
       fontSize: 13,
       outline: 'none',
       boxSizing: 'border-box'
@@ -906,13 +715,13 @@ function ContactsView({
       flex: 1,
       overflowY: 'auto'
     }
-  }, /*#__PURE__*/React.createElement(ViciPinnedCard, {
-    onClick: () => setShowViciModal(true)
+  }, /*#__PURE__*/React.createElement(ShorePinnedCard, {
+    onClick: () => setShowShoreModal(true)
   }), filtered.length === 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       padding: 32,
       textAlign: 'center',
-      color: '#9ca3af',
+      color: 'var(--text2)',
       fontSize: 13
     }
   }, search ? `No contacts match "${search}"` : 'No contacts yet'), filtered.map(c => /*#__PURE__*/React.createElement(ContactRow, {
@@ -943,7 +752,7 @@ function ContactsView({
     style: {
       position: 'fixed',
       inset: 0,
-      background: '#0a0a0a',
+      background: 'var(--bg)',
       zIndex: 100,
       display: 'flex',
       flexDirection: 'column',
@@ -952,7 +761,7 @@ function ContactsView({
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       padding: '12px 16px',
-      borderBottom: '1px solid #2a2a2a',
+      borderBottom: '1px solid var(--border)',
       display: 'flex',
       alignItems: 'center',
       gap: 12,
@@ -963,7 +772,7 @@ function ContactsView({
     style: {
       background: 'none',
       border: 'none',
-      color: '#9ca3af',
+      color: 'var(--text2)',
       fontSize: 20,
       cursor: 'pointer',
       padding: '4px 8px'
@@ -972,7 +781,7 @@ function ContactsView({
     style: {
       fontSize: 15,
       fontWeight: 600,
-      color: '#fff'
+      color: 'var(--text)'
     }
   }, selectedContact.contact?.display_name || selectedContact.contact?.phone)), /*#__PURE__*/React.createElement("div", {
     style: {
@@ -999,8 +808,8 @@ function ContactsView({
       setCreateError('');
     },
     error: createError
-  }), showViciModal && /*#__PURE__*/React.createElement(ViciModal, {
-    onClose: () => setShowViciModal(false)
+  }), showShoreModal && /*#__PURE__*/React.createElement(ShoreModal, {
+    onClose: () => setShowShoreModal(false)
   }));
 }
 
@@ -1017,19 +826,6 @@ function ContactRow({
     if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
     return displayName.slice(0, 2).toUpperCase();
   })();
-  const statusColour = {
-    completed: '#16a34a',
-    processing: '#3b82f6',
-    'on-hold': '#f59e0b',
-    shipped: '#a855f7',
-    delivered: '#16a34a',
-    failed: '#ef4444',
-    cancelled: '#9ca3af',
-    refunded: '#9ca3af',
-    pending: '#6b7280'
-  };
-  const latestStatus = contact.latest_order_status;
-  const statusColor = latestStatus ? statusColour[latestStatus] || '#9ca3af' : null;
   return /*#__PURE__*/React.createElement("div", {
     onClick: onClick,
     style: {
@@ -1038,22 +834,22 @@ function ContactRow({
       gap: 12,
       padding: '11px 16px',
       cursor: 'pointer',
-      background: isSelected ? '#1a2a1a' : 'transparent',
-      borderLeft: isSelected ? '2px solid #16a34a' : '2px solid transparent',
-      borderBottom: '1px solid #111'
+      background: isSelected ? 'var(--accent-dim)' : 'transparent',
+      borderLeft: isSelected ? '2px solid var(--tint)' : '2px solid transparent',
+      borderBottom: '1px solid var(--border)'
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       width: 38,
       height: 38,
       borderRadius: '50%',
-      background: contact.avatar_url ? 'transparent' : '#222',
+      background: contact.avatar_url ? 'transparent' : 'var(--sand-fill)',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
       fontSize: 13,
       fontWeight: 600,
-      color: '#9ca3af',
+      color: 'var(--on-sand)',
       flexShrink: 0,
       overflow: 'hidden'
     }
@@ -1074,39 +870,23 @@ function ContactRow({
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 14,
-      color: '#fff',
+      color: 'var(--text)',
       marginBottom: 2,
       overflow: 'hidden',
       textOverflow: 'ellipsis',
       whiteSpace: 'nowrap'
     }
-  }, displayName), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: 'flex',
-      alignItems: 'center',
-      gap: 6
-    }
-  }, /*#__PURE__*/React.createElement("span", {
+  }, displayName), /*#__PURE__*/React.createElement("span", {
     style: {
       fontSize: 12,
-      color: '#6b7280'
+      color: 'var(--text3)'
     }
-  }, contact.phone), latestStatus && /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontSize: 10,
-      padding: '1px 6px',
-      borderRadius: 4,
-      background: `${statusColor}22`,
-      color: statusColor,
-      textTransform: 'capitalize',
-      fontWeight: 600
-    }
-  }, latestStatus))), (contact.unread_count || 0) > 0 && /*#__PURE__*/React.createElement("div", {
+  }, contact.phone)), (contact.unread_count || 0) > 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       minWidth: 18,
       height: 18,
       borderRadius: 9,
-      background: '#3b82f6',
+      background: 'var(--rescue-orange)',
       color: '#fff',
       fontSize: 10,
       fontWeight: 700,
@@ -1131,9 +911,11 @@ function ContactDetail({
   onEditCancel,
   onEditSave
 }) {
+  // /api/contacts/:phone returns { contact, messages, total_messages } —
+  // GoHighLevel is the system of record for everything else about a person.
   const {
     contact,
-    orders
+    total_messages: totalMessages
   } = data;
   const [editData, setEditData] = useState({
     first_name: contact.first_name || '',
@@ -1171,23 +953,13 @@ function ContactDetail({
     if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
     return displayName.slice(0, 2).toUpperCase();
   })();
-  const statusColour = {
-    completed: '#16a34a',
-    processing: '#3b82f6',
-    'on-hold': '#f59e0b',
-    failed: '#ef4444',
-    cancelled: '#9ca3af',
-    refunded: '#9ca3af',
-    shipped: '#a855f7',
-    delivered: '#16a34a'
-  };
   const detailInput = {
     width: '100%',
-    background: '#111',
-    border: '1px solid #2a2a2a',
+    background: 'var(--surface2)',
+    border: '1px solid var(--border)',
     borderRadius: 6,
     padding: '9px 12px',
-    color: '#fff',
+    color: 'var(--text)',
     fontSize: 13,
     outline: 'none',
     boxSizing: 'border-box'
@@ -1218,7 +990,7 @@ function ContactDetail({
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       padding: '24px 24px 16px',
-      borderBottom: '1px solid #2a2a2a'
+      borderBottom: '1px solid var(--border)'
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -1232,13 +1004,13 @@ function ContactDetail({
       width: 56,
       height: 56,
       borderRadius: '50%',
-      background: (isEditing ? editData.avatar_url : contact.avatar_url) ? 'transparent' : '#222',
+      background: (isEditing ? editData.avatar_url : contact.avatar_url) ? 'transparent' : 'var(--sand-fill)',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
       fontSize: 20,
       fontWeight: 600,
-      color: '#9ca3af',
+      color: 'var(--on-sand)',
       overflow: 'hidden'
     }
   }, (isEditing ? editData.avatar_url : contact.avatar_url) ? /*#__PURE__*/React.createElement("img", {
@@ -1257,7 +1029,8 @@ function ContactDetail({
       width: 20,
       height: 20,
       borderRadius: '50%',
-      background: '#16a34a',
+      background: 'var(--navy-fill)',
+      color: '#fff',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
@@ -1275,26 +1048,26 @@ function ContactDetail({
     style: {
       fontSize: 20,
       fontWeight: 600,
-      color: '#fff',
+      color: 'var(--text)',
       marginBottom: 2
     }
   }, displayName), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 13,
-      color: '#9ca3af',
+      color: 'var(--text2)',
       marginBottom: contact.email ? 2 : 12
     }
   }, contact.phone), contact.email && /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 13,
-      color: '#6b7280',
+      color: 'var(--text3)',
       marginBottom: 12
     }
   }, contact.email), contact.notes && /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 13,
-      color: '#9ca3af',
-      background: '#1a1a1a',
+      color: 'var(--text2)',
+      background: 'var(--surface2)',
       borderRadius: 6,
       padding: '8px 12px',
       marginBottom: 12
@@ -1309,8 +1082,8 @@ function ContactDetail({
     style: {
       flex: 1,
       padding: '10px',
-      background: '#1a1a1a',
-      border: '1px solid #2a2a2a',
+      background: 'var(--navy-fill)',
+      border: 'none',
       borderRadius: 8,
       color: '#fff',
       fontSize: 13,
@@ -1322,7 +1095,7 @@ function ContactDetail({
     style: {
       flex: 1,
       padding: '10px',
-      background: '#16a34a',
+      background: 'var(--sea-green)',
       border: 'none',
       borderRadius: 8,
       color: '#fff',
@@ -1334,10 +1107,10 @@ function ContactDetail({
     onClick: onEditOpen,
     style: {
       padding: '10px 14px',
-      background: '#1a1a1a',
-      border: '1px solid #2a2a2a',
+      background: 'var(--surface2)',
+      border: '1px solid var(--border)',
       borderRadius: 8,
-      color: '#9ca3af',
+      color: 'var(--text2)',
       fontSize: 13,
       cursor: 'pointer'
     }
@@ -1413,7 +1186,7 @@ function ContactDetail({
     style: {
       flex: 1,
       padding: '10px',
-      background: '#16a34a',
+      background: 'var(--navy-fill)',
       border: 'none',
       borderRadius: 8,
       color: '#fff',
@@ -1425,10 +1198,10 @@ function ContactDetail({
     onClick: onEditCancel,
     style: {
       padding: '10px 14px',
-      background: '#1a1a1a',
-      border: '1px solid #2a2a2a',
+      background: 'var(--surface2)',
+      border: '1px solid var(--border)',
       borderRadius: 8,
-      color: '#9ca3af',
+      color: 'var(--text2)',
       fontSize: 13,
       cursor: 'pointer'
     }
@@ -1439,68 +1212,21 @@ function ContactDetail({
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 11,
-      color: '#9ca3af',
+      color: 'var(--text2)',
       letterSpacing: '0.12em',
       textTransform: 'uppercase',
       marginBottom: 12
     }
-  }, "Order History"), !orders || orders.length === 0 ? /*#__PURE__*/React.createElement("div", {
+  }, "Conversation"), /*#__PURE__*/React.createElement("div", {
     style: {
       padding: '16px',
-      background: '#1a1a1a',
+      background: 'var(--surface2)',
       borderRadius: 8,
       fontSize: 13,
-      color: '#9ca3af',
+      color: 'var(--text2)',
       textAlign: 'center'
     }
-  }, "No orders yet") : orders.map((order, i) => /*#__PURE__*/React.createElement("div", {
-    key: order.woo_order_id || order.id || i,
-    style: {
-      background: '#1a1a1a',
-      borderRadius: 8,
-      padding: '12px 14px',
-      marginBottom: 8
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      marginBottom: 4
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 13,
-      fontWeight: 600,
-      color: '#fff'
-    }
-  }, "Order #", order.woo_order_id), /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontSize: 11,
-      padding: '2px 8px',
-      borderRadius: 4,
-      background: `${statusColour[order.status] || '#9ca3af'}22`,
-      color: statusColour[order.status] || '#9ca3af',
-      textTransform: 'capitalize'
-    }
-  }, order.status)), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 13,
-      color: '#9ca3af',
-      marginBottom: 4
-    }
-  }, "$", parseFloat(order.total || 0).toFixed(2), " \xB7 ", formatDate(order.created_at)), Array.isArray(order.items) && order.items.length > 0 && /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 12,
-      color: '#6b7280'
-    }
-  }, order.items.map(it => `${it.quantity}x ${it.name}`).join(', ')), order.tracking_number && /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 12,
-      color: '#3b82f6',
-      marginTop: 4
-    }
-  }, "Tracking: ", order.tracking_number, " ", order.carrier ? `(${order.carrier.toUpperCase()})` : '')))));
+  }, totalMessages > 0 ? `${totalMessages} message${totalMessages === 1 ? '' : 's'} on record — open the thread to read them` : 'No messages yet')));
 }
 
 // ─── Create Contact Modal ─────────────────────────────────────────────────────
@@ -1514,11 +1240,11 @@ function CreateContactModal({
 }) {
   const modalInput = {
     width: '100%',
-    background: '#111',
-    border: '1px solid #2a2a2a',
+    background: 'var(--surface2)',
+    border: '1px solid var(--border)',
     borderRadius: 6,
     padding: '9px 12px',
-    color: '#fff',
+    color: 'var(--text)',
     fontSize: 13,
     outline: 'none',
     boxSizing: 'border-box'
@@ -1527,7 +1253,7 @@ function CreateContactModal({
     style: {
       position: 'fixed',
       inset: 0,
-      background: 'rgba(0,0,0,0.75)',
+      background: 'rgba(10,29,46,0.55)',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
@@ -1535,8 +1261,8 @@ function CreateContactModal({
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
-      background: '#1a1a1a',
-      border: '1px solid #2a2a2a',
+      background: 'var(--surface)',
+      border: '1px solid var(--border)',
       borderRadius: 12,
       padding: 28,
       width: '90%',
@@ -1546,7 +1272,7 @@ function CreateContactModal({
     style: {
       fontSize: 16,
       fontWeight: 600,
-      color: '#fff',
+      color: 'var(--text)',
       marginBottom: 20
     }
   }, "New Contact"), /*#__PURE__*/React.createElement("div", {
@@ -1607,7 +1333,7 @@ function CreateContactModal({
   }), error && /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 13,
-      color: '#ef4444'
+      color: 'var(--red)'
     }
   }, error), /*#__PURE__*/React.createElement("div", {
     style: {
@@ -1620,7 +1346,7 @@ function CreateContactModal({
     style: {
       flex: 1,
       padding: '12px',
-      background: '#16a34a',
+      background: 'var(--navy-fill)',
       border: 'none',
       borderRadius: 8,
       color: '#fff',
@@ -1633,9 +1359,9 @@ function CreateContactModal({
     style: {
       padding: '12px 16px',
       background: 'none',
-      border: '1px solid #2a2a2a',
+      border: '1px solid var(--border)',
       borderRadius: 8,
-      color: '#9ca3af',
+      color: 'var(--text2)',
       fontSize: 14,
       cursor: 'pointer'
     }
@@ -1681,8 +1407,7 @@ function MessagesView({
   const endPress = () => clearTimeout(pressTimer.current);
 
   // Sort: contacts with messages first (newest message → oldest),
-  // then contacts with orders but no messages (newest order → oldest),
-  // then contacts with no messages and no orders at the bottom
+  // then contacts with no messages sorted by last_seen
   const sorted = [...conversations].sort((a, b) => {
     const aMsg = a.lastMessage?.created_at;
     const bMsg = b.lastMessage?.created_at;
@@ -1690,8 +1415,8 @@ function MessagesView({
     if (aMsg && !bMsg) return -1;
     if (!aMsg && bMsg) return 1;
     // Both have no messages — sort by most recent activity
-    const aKey = Math.max(a.last_seen ? new Date(a.last_seen).getTime() : 0, a.latest_order_date ? new Date(a.latest_order_date).getTime() : 0);
-    const bKey = Math.max(b.last_seen ? new Date(b.last_seen).getTime() : 0, b.latest_order_date ? new Date(b.latest_order_date).getTime() : 0);
+    const aKey = a.last_seen ? new Date(a.last_seen).getTime() : 0;
+    const bKey = b.last_seen ? new Date(b.last_seen).getTime() : 0;
     return bKey - aKey;
   });
   const filtered = sorted.filter(c => {
@@ -1722,7 +1447,7 @@ function MessagesView({
     className: "conv-list"
   }, filtered.length === 0 && /*#__PURE__*/React.createElement("div", {
     className: "conv-empty"
-  }, search ? `// no results` : `// no conversations`), filtered.map((c, idx) => {
+  }, search ? 'No results' : 'No conversations yet'), filtered.map((c, idx) => {
     const prevHasMsg = idx > 0 && !!filtered[idx - 1].lastMessage;
     const thisHasMsg = !!c.lastMessage;
     const showDivider = prevHasMsg && !thisHasMsg;
@@ -1738,7 +1463,7 @@ function MessagesView({
         borderBottom: '1px solid var(--border)',
         background: 'var(--bg)'
       }
-    }, "// NO MESSAGES YET"), /*#__PURE__*/React.createElement(ConvRow, {
+    }, "NO MESSAGES YET"), /*#__PURE__*/React.createElement(ConvRow, {
       contact: c,
       active: c.phone === activePhone,
       onClick: () => {
@@ -1768,10 +1493,10 @@ function MessagesView({
     disabled: callState.status !== 'idle' || !voiceReady,
     style: {
       background: 'none',
-      border: `1px solid ${callState.status !== 'idle' || !voiceReady ? '#2a2a2a' : '#16a34a'}`,
+      border: `1px solid ${callState.status !== 'idle' || !voiceReady ? 'var(--border)' : 'var(--sea-green)'}`,
       borderRadius: 6,
       padding: '6px 12px',
-      color: callState.status !== 'idle' || !voiceReady ? '#9ca3af' : '#16a34a',
+      color: callState.status !== 'idle' || !voiceReady ? 'var(--text2)' : 'var(--sea-green)',
       cursor: callState.status !== 'idle' || !voiceReady ? 'default' : 'pointer',
       fontSize: 13,
       display: 'flex',
@@ -1780,7 +1505,7 @@ function MessagesView({
       marginLeft: 8,
       flexShrink: 0
     },
-    title: "Call this customer"
+    title: "Call this contact"
   }, "\uD83D\uDCDE Call")), /*#__PURE__*/React.createElement("div", {
     className: "messages-area"
   }, visibleMessages.length === 0 ? /*#__PURE__*/React.createElement("div", {
@@ -1790,10 +1515,9 @@ function MessagesView({
       alignItems: 'center',
       justifyContent: 'center',
       color: 'var(--text3)',
-      fontFamily: 'var(--mono)',
       fontSize: '0.8125rem'
     }
-  }, "// no messages yet") : visibleMessages.map((m, idx) => {
+  }, "No messages yet") : visibleMessages.map((m, idx) => {
     const prev = visibleMessages[idx - 1];
     const showDate = !prev || new Date(m.created_at).toDateString() !== new Date(prev.created_at).toDateString();
     const original = m.reply_to_message_id ? activeMessages.find(x => x.id === m.reply_to_message_id) : null;
@@ -1933,7 +1657,7 @@ function MessagesView({
     style: {
       width: '14px',
       height: '14px',
-      borderTopColor: '#030712'
+      borderTopColor: '#fff'
     }
   }) : '↑')), /*#__PURE__*/React.createElement("div", {
     className: "compose-footer"
@@ -2027,8 +1751,7 @@ function ConvRow({
   onClick
 }) {
   const preview = c.lastMessage ? (c.lastMessage.direction === 'outbound' ? '↗ ' : '') + (messagePreviewText(c.lastMessage, 40) || truncate(c.lastMessage.body, 40)) : 'No messages yet';
-  const orderStatus = c.latest_order_status || 'none';
-  const timestamp = smartTime(c.lastMessage?.created_at || c.latest_order_date || c.last_seen);
+  const timestamp = smartTime(c.lastMessage?.created_at || c.last_seen);
   const isUnread = (c.unread_count || 0) > 0;
   return /*#__PURE__*/React.createElement("div", {
     className: `conv-row${active ? ' active' : ''}`,
@@ -2038,9 +1761,7 @@ function ConvRow({
     style: {
       position: 'relative'
     }
-  }, getInitials(c), /*#__PURE__*/React.createElement("span", {
-    className: `order-dot ${orderStatus}`
-  }), isUnread && /*#__PURE__*/React.createElement("span", {
+  }, getInitials(c), isUnread && /*#__PURE__*/React.createElement("span", {
     style: {
       position: 'absolute',
       top: -2,
@@ -2048,8 +1769,8 @@ function ConvRow({
       width: 10,
       height: 10,
       borderRadius: '50%',
-      background: '#3b82f6',
-      border: '2px solid var(--bg)',
+      background: 'var(--rescue-orange)',
+      border: '2px solid var(--surface)',
       display: 'block'
     }
   })), /*#__PURE__*/React.createElement("div", {
@@ -2069,797 +1790,6 @@ function ConvRow({
   }, timestamp), isUnread && /*#__PURE__*/React.createElement("span", {
     className: "unread-pill"
   }, c.unread_count > 99 ? '99+' : c.unread_count)));
-}
-
-// ─── Activity Tab Components ──────────────────────────────────────────────────
-
-function flowBadgeStyle(flowType) {
-  if (!flowType) return {
-    bg: 'var(--surface2)',
-    color: 'var(--text3)'
-  };
-  if (flowType.startsWith('failed')) return {
-    bg: 'rgba(248,113,113,0.12)',
-    color: 'var(--red)'
-  };
-  if (flowType.startsWith('hold')) return {
-    bg: 'rgba(251,191,36,0.12)',
-    color: 'var(--yellow)'
-  };
-  if (flowType.startsWith('confirmed')) return {
-    bg: 'rgba(0,245,160,0.08)',
-    color: 'var(--accent)'
-  };
-  if (flowType.startsWith('shipped') || flowType.startsWith('delivered')) return {
-    bg: 'rgba(0,245,160,0.12)',
-    color: 'var(--accent)'
-  };
-  return {
-    bg: 'var(--surface2)',
-    color: 'var(--text3)'
-  };
-}
-function FlowBadge({
-  flowType
-}) {
-  const {
-    bg,
-    color
-  } = flowBadgeStyle(flowType);
-  return /*#__PURE__*/React.createElement("span", {
-    style: {
-      background: bg,
-      color,
-      fontSize: '0.625rem',
-      fontFamily: 'var(--mono)',
-      padding: '2px 6px',
-      borderRadius: 3,
-      whiteSpace: 'nowrap',
-      letterSpacing: '0.03em'
-    }
-  }, flowType || 'unknown');
-}
-function useCountdown(sendAt) {
-  const [remaining, setRemaining] = useState('');
-  useEffect(() => {
-    const tick = () => {
-      const diff = new Date(sendAt) - new Date();
-      if (diff <= 0) {
-        setRemaining('firing...');
-        return;
-      }
-      const h = Math.floor(diff / 3600000);
-      const m = Math.floor(diff % 3600000 / 60000);
-      const s = Math.floor(diff % 60000 / 1000);
-      if (h > 0) setRemaining(`${h}h ${m}m`);else if (m > 0) setRemaining(`${m}m ${s}s`);else setRemaining(`${s}s`);
-    };
-    tick();
-    const interval = setInterval(tick, 1000);
-    return () => clearInterval(interval);
-  }, [sendAt]);
-  return remaining;
-}
-function QueueRow({
-  item,
-  onCancel
-}) {
-  const countdown = useCountdown(item.send_at);
-  const displayName = item.contact_name || '...' + (item.phone?.slice(-4) || '');
-  const preview = item.message_body ? item.message_body.length > 70 ? item.message_body.slice(0, 70) + '...' : item.message_body : '';
-  return /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: 'flex',
-      alignItems: 'flex-start',
-      gap: '0.625rem',
-      padding: '0.75rem 1rem',
-      borderBottom: '1px solid var(--border)',
-      minHeight: 56
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      flex: 1,
-      minWidth: 0
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: 'flex',
-      alignItems: 'center',
-      gap: '0.375rem',
-      marginBottom: '0.25rem',
-      flexWrap: 'wrap'
-    }
-  }, /*#__PURE__*/React.createElement("span", {
-    style: {
-      color: 'var(--text)',
-      fontSize: '0.8125rem',
-      fontWeight: 600
-    }
-  }, displayName), /*#__PURE__*/React.createElement(FlowBadge, {
-    flowType: item.flow_type
-  }), item.order_id && /*#__PURE__*/React.createElement("span", {
-    style: {
-      color: 'var(--text3)',
-      fontSize: '0.65rem',
-      fontFamily: 'var(--mono)'
-    }
-  }, "#", item.order_id)), /*#__PURE__*/React.createElement("div", {
-    style: {
-      color: 'var(--text3)',
-      fontSize: '0.7rem',
-      fontFamily: 'var(--mono)',
-      lineHeight: 1.4
-    }
-  }, preview)), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'flex-end',
-      gap: '0.375rem',
-      flexShrink: 0,
-      paddingTop: 2
-    }
-  }, /*#__PURE__*/React.createElement("span", {
-    style: {
-      color: 'var(--yellow)',
-      fontSize: '0.7rem',
-      fontFamily: 'var(--mono)',
-      whiteSpace: 'nowrap'
-    }
-  }, countdown), /*#__PURE__*/React.createElement("button", {
-    onClick: () => onCancel(item),
-    style: {
-      background: 'transparent',
-      border: '1px solid rgba(248,113,113,0.4)',
-      color: 'var(--red)',
-      padding: '3px 9px',
-      borderRadius: 5,
-      fontSize: '0.65rem',
-      cursor: 'pointer',
-      fontFamily: 'var(--mono)',
-      whiteSpace: 'nowrap'
-    }
-  }, "cancel")));
-}
-function CancelModal({
-  target,
-  onConfirm,
-  onDismiss,
-  cancelling
-}) {
-  if (!target) return null;
-  const displayName = target.contact_name || '...' + (target.phone?.slice(-4) || '');
-  return /*#__PURE__*/React.createElement("div", {
-    style: {
-      position: 'fixed',
-      inset: 0,
-      background: 'rgba(0,0,0,0.85)',
-      zIndex: 1000,
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      padding: '1rem'
-    },
-    onClick: e => {
-      if (e.target === e.currentTarget) onDismiss();
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      background: 'var(--surface)',
-      border: '1px solid var(--border)',
-      borderRadius: 8,
-      padding: '1.5rem',
-      maxWidth: 480,
-      width: '100%',
-      maxHeight: '90vh',
-      overflowY: 'auto'
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      color: 'var(--text)',
-      fontSize: '1rem',
-      fontWeight: 600,
-      marginBottom: '1rem'
-    }
-  }, "Cancel this message?"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: 'flex',
-      alignItems: 'center',
-      gap: '0.5rem',
-      marginBottom: '0.75rem',
-      flexWrap: 'wrap'
-    }
-  }, /*#__PURE__*/React.createElement("span", {
-    style: {
-      color: 'var(--text)',
-      fontWeight: 500
-    }
-  }, displayName), /*#__PURE__*/React.createElement(FlowBadge, {
-    flowType: target.flow_type
-  }), target.order_id && /*#__PURE__*/React.createElement("span", {
-    style: {
-      color: 'var(--text2)',
-      fontSize: '0.75rem',
-      fontFamily: 'var(--mono)'
-    }
-  }, "#", target.order_id)), /*#__PURE__*/React.createElement("div", {
-    style: {
-      background: 'var(--bg)',
-      border: '1px solid var(--border)',
-      borderRadius: 6,
-      padding: '0.75rem',
-      fontSize: '0.75rem',
-      color: 'var(--text2)',
-      fontFamily: 'var(--mono)',
-      whiteSpace: 'pre-wrap',
-      marginBottom: '0.75rem',
-      lineHeight: 1.6
-    }
-  }, target.message_body), /*#__PURE__*/React.createElement("div", {
-    style: {
-      color: 'var(--text2)',
-      fontSize: '0.75rem',
-      marginBottom: '1.25rem'
-    }
-  }, "Would send: ", target.send_at ? new Date(target.send_at).toLocaleString('en-US', {
-    timeZone: TZ
-  }) : ''), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: 'flex',
-      gap: '0.75rem'
-    }
-  }, /*#__PURE__*/React.createElement("button", {
-    onClick: onConfirm,
-    disabled: cancelling,
-    style: {
-      flex: 1,
-      background: '#ef4444',
-      color: '#fff',
-      border: 'none',
-      padding: '0.625rem',
-      borderRadius: 6,
-      fontSize: '0.875rem',
-      cursor: 'pointer',
-      fontWeight: 500
-    }
-  }, cancelling ? /*#__PURE__*/React.createElement("span", {
-    className: "spinner",
-    style: {
-      borderTopColor: '#fff'
-    }
-  }) : 'Yes, cancel it'), /*#__PURE__*/React.createElement("button", {
-    onClick: onDismiss,
-    style: {
-      flex: 1,
-      background: 'var(--border)',
-      color: 'var(--text2)',
-      border: 'none',
-      padding: '0.625rem',
-      borderRadius: 6,
-      fontSize: '0.875rem',
-      cursor: 'pointer'
-    }
-  }, "Keep it"))));
-}
-function RecentRow({
-  item
-}) {
-  const [expanded, setExpanded] = useState(false);
-  const displayName = item.contact_name || '...' + (item.phone?.slice(-4) || '');
-  return /*#__PURE__*/React.createElement("div", {
-    style: {
-      borderBottom: '1px solid var(--border)'
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: 'flex',
-      alignItems: 'center',
-      gap: '0.75rem',
-      padding: '0.625rem 1rem',
-      cursor: 'pointer'
-    },
-    onClick: () => setExpanded(e => !e)
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      flex: 1,
-      minWidth: 0
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: 'flex',
-      alignItems: 'center',
-      gap: '0.5rem',
-      flexWrap: 'wrap'
-    }
-  }, /*#__PURE__*/React.createElement("span", {
-    style: {
-      color: 'var(--text)',
-      fontSize: '0.8125rem',
-      fontWeight: 500
-    }
-  }, displayName), /*#__PURE__*/React.createElement(FlowBadge, {
-    flowType: item.flow_type
-  }), item.order_id && /*#__PURE__*/React.createElement("span", {
-    style: {
-      color: 'var(--text2)',
-      fontSize: '0.7rem',
-      fontFamily: 'var(--mono)'
-    }
-  }, "#", item.order_id))), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: 'flex',
-      alignItems: 'center',
-      gap: '0.5rem',
-      flexShrink: 0
-    }
-  }, /*#__PURE__*/React.createElement("span", {
-    style: {
-      color: 'var(--text2)',
-      fontSize: '0.7rem',
-      fontFamily: 'var(--mono)'
-    }
-  }, relativeTime(item.sent_at)), /*#__PURE__*/React.createElement("span", {
-    style: {
-      color: 'var(--text2)',
-      fontSize: '0.75rem'
-    }
-  }, expanded ? '▲' : '▼'))), expanded && /*#__PURE__*/React.createElement("div", {
-    style: {
-      padding: '0 1rem 0.75rem',
-      borderTop: '1px solid var(--border)'
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      background: 'var(--bg)',
-      border: '1px solid var(--border)',
-      borderRadius: 6,
-      padding: '0.625rem',
-      fontSize: '0.75rem',
-      color: 'var(--text2)',
-      fontFamily: 'var(--mono)',
-      whiteSpace: 'pre-wrap',
-      lineHeight: 1.6,
-      marginBottom: '0.375rem'
-    }
-  }, item.message_body), item.telnyx_message_id && /*#__PURE__*/React.createElement("div", {
-    style: {
-      color: 'var(--text2)',
-      fontSize: '0.65rem',
-      fontFamily: 'var(--mono)'
-    }
-  }, "ID: ", item.telnyx_message_id)));
-}
-function LiveFeed({
-  events
-}) {
-  return /*#__PURE__*/React.createElement("div", null, events.length === 0 ? /*#__PURE__*/React.createElement("div", {
-    style: {
-      padding: '1.25rem',
-      color: 'var(--text2)',
-      fontSize: '0.75rem',
-      fontFamily: 'var(--mono)',
-      textAlign: 'center'
-    }
-  }, "// waiting for events") : events.map((ev, i) => {
-    const dotColor = ev.type === 'message_sent' ? 'var(--accent)' : ev.type === 'queue_cancelled' ? 'var(--red)' : ev.type === 'new_message' ? 'var(--blue)' : 'var(--yellow)';
-    const name = ev.contact_name || (ev.phone ? '...' + ev.phone.slice(-4) : '');
-    const label = ev.type === 'queue_added' ? `queued ${ev.flow_type || ''} for ${name}` : ev.type === 'message_sent' ? `sent ${ev.flow_type || ''} to ${name}` : ev.type === 'queue_cancelled' ? `cancelled ${ev.flow_type || ''} for ${name}` : ev.type === 'new_message' ? `inbound SMS from ${name}` : ev.type;
-    return /*#__PURE__*/React.createElement("div", {
-      key: i,
-      style: {
-        display: 'flex',
-        alignItems: 'center',
-        gap: '0.5rem',
-        padding: '0.5rem 1rem',
-        borderBottom: '1px solid var(--border)',
-        borderLeft: `3px solid ${dotColor}`
-      }
-    }, /*#__PURE__*/React.createElement("span", {
-      style: {
-        color: 'var(--text)',
-        fontSize: '0.75rem',
-        fontFamily: 'var(--mono)',
-        flex: 1
-      }
-    }, label), /*#__PURE__*/React.createElement("span", {
-      style: {
-        color: 'var(--text2)',
-        fontSize: '0.65rem',
-        fontFamily: 'var(--mono)',
-        flexShrink: 0
-      }
-    }, relativeTime(ev.ts)));
-  }));
-}
-function StatCard({
-  label,
-  value,
-  color
-}) {
-  return /*#__PURE__*/React.createElement("div", {
-    style: {
-      background: 'var(--surface)',
-      border: '1px solid var(--border)',
-      borderRadius: 10,
-      padding: '0.75rem 0.5rem',
-      textAlign: 'center'
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: '1.5rem',
-      fontWeight: 700,
-      color,
-      fontFamily: 'var(--mono)',
-      lineHeight: 1
-    }
-  }, value), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: '0.6rem',
-      color: 'var(--text3)',
-      marginTop: '0.3rem',
-      letterSpacing: '0.06em',
-      textTransform: 'uppercase'
-    }
-  }, label));
-}
-const FLOW_FILTERS = [{
-  value: 'all',
-  label: 'All'
-}, {
-  value: 'failed-msg1',
-  label: 'Failed 1'
-}, {
-  value: 'failed-msg2',
-  label: 'Failed 2'
-}, {
-  value: 'failed-msg3',
-  label: 'Failed 3'
-}, {
-  value: 'hold-msg1',
-  label: 'Hold 1'
-}, {
-  value: 'hold-msg2',
-  label: 'Hold 2'
-}, {
-  value: 'hold-msg3',
-  label: 'Hold 3'
-}, {
-  value: 'hold-failed-nudge',
-  label: 'Nudge'
-}, {
-  value: 'confirmed-new',
-  label: 'New'
-}, {
-  value: 'confirmed-returning',
-  label: 'Return'
-}, {
-  value: 'shipped-msg1',
-  label: 'Shipped'
-}, {
-  value: 'delivered-msg1',
-  label: 'Delivered'
-}];
-function ActivityTab({
-  sseStatus
-}) {
-  const [stats, setStats] = useState({
-    pending: 0,
-    sentToday: 0,
-    failedToday: 0,
-    cancelledToday: 0
-  });
-  const [queue, setQueue] = useState([]);
-  const [recent, setRecent] = useState([]);
-  const [flowFilter, setFlowFilter] = useState('all');
-  const [cancelTarget, setCancelTarget] = useState(null);
-  const [cancelling, setCancelling] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [liveEvents, setLiveEvents] = useState([]);
-  const [queuePage, setQueuePage] = useState(1);
-  const [queueHasMore, setQueueHasMore] = useState(false);
-  const [recentPage, setRecentPage] = useState(1);
-  const [recentHasMore, setRecentHasMore] = useState(false);
-  const isMobile = useIsMobile();
-  const currentFilter = useRef(flowFilter);
-  currentFilter.current = flowFilter;
-  async function loadAll(filter, qPage, rPage) {
-    const f = filter ?? flowFilter;
-    const qp = qPage ?? 1;
-    const rp = rPage ?? 1;
-    try {
-      const [s, q, r] = await Promise.all([api('GET', '/api/activity/stats'), api('GET', `/api/activity/queue?flow=${f}&page=${qp}`), api('GET', `/api/activity/recent?flow=${f}&page=${rp}`)]);
-      setStats(s);
-      if (qp === 1) setQueue(q.items || []);else setQueue(prev => [...prev, ...(q.items || [])]);
-      setQueueHasMore(q.hasMore || false);
-      if (rp === 1) setRecent(r.items || []);else setRecent(prev => [...prev, ...(r.items || [])]);
-      setRecentHasMore(r.hasMore || false);
-    } catch (err) {
-      console.error('[Activity] load error:', err.message);
-    } finally {
-      setLoading(false);
-    }
-  }
-  useEffect(() => {
-    setLoading(true);
-    setQueuePage(1);
-    setRecentPage(1);
-    loadAll(flowFilter, 1, 1);
-  }, [flowFilter]);
-  useEffect(() => {
-    function handleSSE(e) {
-      const event = {
-        ...e.detail,
-        ts: new Date().toISOString()
-      };
-      const activityTypes = ['queue_added', 'queue_cancelled', 'message_sent', 'new_message'];
-      if (activityTypes.includes(event.type)) {
-        setLiveEvents(prev => [event, ...prev].slice(0, 20));
-      }
-      switch (event.type) {
-        case 'queue_added':
-          setQueue(prev => {
-            if (prev.some(m => m.id === event.id)) return prev;
-            const newItem = {
-              id: event.id,
-              order_id: event.order_id,
-              phone: event.phone,
-              flow_type: event.flow_type,
-              send_at: event.send_at,
-              message_body: '',
-              contact_name: null
-            };
-            return [...prev, newItem].sort((a, b) => new Date(a.send_at) - new Date(b.send_at));
-          });
-          setStats(prev => ({
-            ...prev,
-            pending: prev.pending + 1
-          }));
-          break;
-        case 'queue_cancelled':
-          setQueue(prev => prev.filter(m => m.id !== event.id));
-          setStats(prev => ({
-            ...prev,
-            pending: Math.max(0, prev.pending - 1),
-            cancelledToday: prev.cancelledToday + 1
-          }));
-          break;
-        case 'message_sent':
-          setQueue(prev => prev.filter(m => m.id !== event.id));
-          setStats(prev => ({
-            ...prev,
-            pending: Math.max(0, prev.pending - 1),
-            sentToday: prev.sentToday + 1
-          }));
-          api('GET', `/api/activity/recent?flow=${currentFilter.current}&page=1`).then(r => setRecent(r.items || [])).catch(() => {});
-          break;
-        case 'stats_update':
-          api('GET', '/api/activity/stats').then(setStats).catch(() => {});
-          break;
-      }
-    }
-    window.addEventListener('vici-sse', handleSSE);
-    return () => window.removeEventListener('vici-sse', handleSSE);
-  }, []);
-  async function handleCancelConfirm() {
-    if (!cancelTarget || cancelling) return;
-    setCancelling(true);
-    try {
-      await api('DELETE', `/api/activity/queue/${cancelTarget.id}`);
-      setQueue(prev => prev.filter(m => m.id !== cancelTarget.id));
-      setStats(prev => ({
-        ...prev,
-        pending: Math.max(0, prev.pending - 1),
-        cancelledToday: prev.cancelledToday + 1
-      }));
-    } catch (err) {
-      console.error('[Activity] cancel error:', err.message);
-    } finally {
-      setCancelling(false);
-      setCancelTarget(null);
-    }
-  }
-  const sectionStyle = {
-    background: 'var(--surface)',
-    border: '1px solid var(--border)',
-    borderRadius: 10,
-    overflow: 'hidden'
-  };
-  const sectionHdr = {
-    padding: '0.625rem 1rem',
-    borderBottom: '1px solid var(--border)',
-    fontSize: '0.65rem',
-    fontFamily: 'var(--mono)',
-    color: 'var(--text3)',
-    letterSpacing: '0.1em',
-    textTransform: 'uppercase',
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center'
-  };
-  const loadMoreBtn = {
-    background: 'none',
-    border: '1px solid var(--border)',
-    color: 'var(--text3)',
-    padding: '5px 16px',
-    borderRadius: 5,
-    cursor: 'pointer',
-    fontSize: '0.7rem',
-    fontFamily: 'var(--mono)'
-  };
-  return (
-    /*#__PURE__*/
-    // Outer shell — fills .main-content, clips to viewport bounds
-    React.createElement("div", {
-      style: {
-        flex: 1,
-        display: 'flex',
-        flexDirection: 'column',
-        overflow: 'hidden',
-        minHeight: 0
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      style: {
-        flex: 1,
-        overflowY: 'auto',
-        overflowX: 'hidden',
-        WebkitOverflowScrolling: 'touch',
-        overscrollBehavior: 'contain'
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      style: {
-        padding: isMobile ? '0.75rem' : '1.25rem 1.5rem',
-        maxWidth: 900,
-        margin: '0 auto',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '0.875rem',
-        paddingBottom: isMobile ? '1.5rem' : '2rem'
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      style: {
-        display: 'grid',
-        gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, 1fr)',
-        gap: '0.5rem'
-      }
-    }, /*#__PURE__*/React.createElement(StatCard, {
-      label: "Pending",
-      value: stats.pending,
-      color: "var(--yellow)"
-    }), /*#__PURE__*/React.createElement(StatCard, {
-      label: "Sent today",
-      value: stats.sentToday,
-      color: "var(--accent)"
-    }), /*#__PURE__*/React.createElement(StatCard, {
-      label: "Failed today",
-      value: stats.failedToday,
-      color: "var(--red)"
-    }), /*#__PURE__*/React.createElement(StatCard, {
-      label: "Cancelled today",
-      value: stats.cancelledToday,
-      color: "var(--text2)"
-    })), /*#__PURE__*/React.createElement("div", {
-      style: {
-        overflowX: 'auto',
-        WebkitOverflowScrolling: 'touch',
-        paddingBottom: '4px',
-        marginBottom: '-4px'
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      style: {
-        display: 'flex',
-        gap: '0.375rem',
-        minWidth: 'max-content',
-        paddingBottom: '2px'
-      }
-    }, FLOW_FILTERS.map(f => /*#__PURE__*/React.createElement("button", {
-      key: f.value,
-      onClick: () => setFlowFilter(f.value),
-      style: {
-        padding: '5px 11px',
-        borderRadius: 20,
-        cursor: 'pointer',
-        fontSize: '0.675rem',
-        fontFamily: 'var(--mono)',
-        whiteSpace: 'nowrap',
-        fontWeight: 600,
-        letterSpacing: '0.03em',
-        border: flowFilter === f.value ? '1px solid var(--accent)' : '1px solid var(--border)',
-        background: flowFilter === f.value ? 'var(--accent-dim)' : 'transparent',
-        color: flowFilter === f.value ? 'var(--accent)' : 'var(--text3)'
-      }
-    }, f.label)))), /*#__PURE__*/React.createElement("div", {
-      style: sectionStyle
-    }, /*#__PURE__*/React.createElement("div", {
-      style: sectionHdr
-    }, /*#__PURE__*/React.createElement("span", null, "// queue (", queue.length, queueHasMore ? '+' : '', ")"), /*#__PURE__*/React.createElement("span", {
-      style: {
-        color: sseStatus === 'connected' ? 'var(--accent)' : 'var(--yellow)',
-        fontSize: '0.6rem',
-        fontFamily: 'var(--mono)'
-      }
-    }, sseStatus === 'connected' ? '● live' : '○ ' + sseStatus)), loading ? /*#__PURE__*/React.createElement("div", {
-      style: {
-        padding: '2rem',
-        textAlign: 'center'
-      }
-    }, /*#__PURE__*/React.createElement("span", {
-      className: "spinner"
-    })) : queue.length === 0 ? /*#__PURE__*/React.createElement("div", {
-      style: {
-        padding: '1.5rem',
-        color: 'var(--text3)',
-        fontSize: '0.75rem',
-        fontFamily: 'var(--mono)',
-        textAlign: 'center'
-      }
-    }, "// queue is empty") : /*#__PURE__*/React.createElement(React.Fragment, null, queue.map(item => /*#__PURE__*/React.createElement(QueueRow, {
-      key: item.id,
-      item: item,
-      onCancel: setCancelTarget
-    })), queueHasMore && /*#__PURE__*/React.createElement("div", {
-      style: {
-        padding: '0.625rem',
-        textAlign: 'center'
-      }
-    }, /*#__PURE__*/React.createElement("button", {
-      style: loadMoreBtn,
-      onClick: () => {
-        const n = queuePage + 1;
-        setQueuePage(n);
-        loadAll(flowFilter, n, recentPage);
-      }
-    }, "load more")))), /*#__PURE__*/React.createElement("div", {
-      style: sectionStyle
-    }, /*#__PURE__*/React.createElement("div", {
-      style: sectionHdr
-    }, /*#__PURE__*/React.createElement("span", null, "// recent sends")), loading ? /*#__PURE__*/React.createElement("div", {
-      style: {
-        padding: '2rem',
-        textAlign: 'center'
-      }
-    }, /*#__PURE__*/React.createElement("span", {
-      className: "spinner"
-    })) : recent.length === 0 ? /*#__PURE__*/React.createElement("div", {
-      style: {
-        padding: '1.5rem',
-        color: 'var(--text3)',
-        fontSize: '0.75rem',
-        fontFamily: 'var(--mono)',
-        textAlign: 'center'
-      }
-    }, "// no messages sent yet") : /*#__PURE__*/React.createElement(React.Fragment, null, recent.map(item => /*#__PURE__*/React.createElement(RecentRow, {
-      key: item.id,
-      item: item
-    })), recentHasMore && /*#__PURE__*/React.createElement("div", {
-      style: {
-        padding: '0.625rem',
-        textAlign: 'center'
-      }
-    }, /*#__PURE__*/React.createElement("button", {
-      style: loadMoreBtn,
-      onClick: () => {
-        const n = recentPage + 1;
-        setRecentPage(n);
-        loadAll(flowFilter, queuePage, n);
-      }
-    }, "load more")))), /*#__PURE__*/React.createElement("div", {
-      style: sectionStyle
-    }, /*#__PURE__*/React.createElement("div", {
-      style: sectionHdr
-    }, /*#__PURE__*/React.createElement("span", null, "// live feed"), /*#__PURE__*/React.createElement("span", {
-      style: {
-        color: 'var(--text3)',
-        fontSize: '0.6rem',
-        fontFamily: 'var(--mono)'
-      }
-    }, liveEvents.length, " events")), /*#__PURE__*/React.createElement(LiveFeed, {
-      events: liveEvents
-    })))), /*#__PURE__*/React.createElement(CancelModal, {
-      target: cancelTarget,
-      onConfirm: handleCancelConfirm,
-      onDismiss: () => setCancelTarget(null),
-      cancelling: cancelling
-    }))
-  );
 }
 
 // ─── Voice Components ─────────────────────────────────────────────────────────
@@ -2882,8 +1812,8 @@ function CallConfirmModal({
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
-      background: '#1a1a1a',
-      border: '1px solid #2a2a2a',
+      background: 'var(--surface)',
+      border: '1px solid var(--border)',
       borderRadius: 12,
       padding: 28,
       minWidth: 280,
@@ -2892,7 +1822,7 @@ function CallConfirmModal({
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 12,
-      color: '#9ca3af',
+      color: 'var(--text2)',
       marginBottom: 8,
       letterSpacing: '0.1em',
       textTransform: 'uppercase'
@@ -2901,13 +1831,13 @@ function CallConfirmModal({
     style: {
       fontSize: 20,
       fontWeight: 600,
-      color: '#fff',
+      color: 'var(--text)',
       marginBottom: 4
     }
   }, target.name !== target.phone ? target.name : target.phone), target.name !== target.phone && /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 14,
-      color: '#9ca3af',
+      color: 'var(--text2)',
       marginBottom: 24
     }
   }, target.phone), target.name === target.phone && /*#__PURE__*/React.createElement("div", {
@@ -2923,7 +1853,7 @@ function CallConfirmModal({
   }, /*#__PURE__*/React.createElement("button", {
     onClick: onConfirm,
     style: {
-      background: '#16a34a',
+      background: 'var(--sea-green)',
       border: 'none',
       borderRadius: 8,
       padding: '12px 24px',
@@ -2936,10 +1866,10 @@ function CallConfirmModal({
     onClick: onCancel,
     style: {
       background: 'none',
-      border: '1px solid #2a2a2a',
+      border: '1px solid var(--border)',
       borderRadius: 8,
       padding: '12px 24px',
-      color: '#9ca3af',
+      color: 'var(--text2)',
       fontSize: 14,
       cursor: 'pointer'
     }
@@ -2966,19 +1896,19 @@ function ActiveCallPanel({
       bottom: 80,
       left: '50%',
       transform: 'translateX(-50%)',
-      background: '#1a1a1a',
-      border: '1px solid #2a2a2a',
+      background: 'var(--surface)',
+      border: '1px solid var(--border)',
       borderRadius: 16,
       padding: '20px 28px',
       minWidth: 290,
       zIndex: 1500,
-      boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
+      boxShadow: '0 8px 32px rgba(10,29,46,0.35)',
       textAlign: 'center'
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 11,
-      color: '#9ca3af',
+      color: 'var(--text2)',
       marginBottom: 6,
       letterSpacing: '0.12em',
       textTransform: 'uppercase'
@@ -2987,20 +1917,20 @@ function ActiveCallPanel({
     style: {
       fontSize: 18,
       fontWeight: 600,
-      color: '#fff',
+      color: 'var(--text)',
       marginBottom: 2
     }
   }, callState.contactName || callState.contactPhone), callState.contactName && /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 13,
-      color: '#9ca3af',
+      color: 'var(--text2)',
       marginBottom: 12
     }
   }, callState.contactPhone), isActive && /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 22,
       fontWeight: 700,
-      color: '#16a34a',
+      color: 'var(--sea-green)',
       marginBottom: 16
     }
   }, formatDuration(callState.duration)), /*#__PURE__*/React.createElement("div", {
@@ -3013,7 +1943,7 @@ function ActiveCallPanel({
   }, isRinging && isInbound && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("button", {
     onClick: onAnswer,
     style: {
-      background: '#16a34a',
+      background: 'var(--sea-green)',
       border: 'none',
       borderRadius: '50%',
       width: 56,
@@ -3026,7 +1956,7 @@ function ActiveCallPanel({
   }, "\uD83D\uDCDE"), /*#__PURE__*/React.createElement("button", {
     onClick: onHangup,
     style: {
-      background: '#ef4444',
+      background: 'var(--rescue-orange)',
       border: 'none',
       borderRadius: '50%',
       width: 56,
@@ -3038,12 +1968,12 @@ function ActiveCallPanel({
   }, "\uD83D\uDCF5")), isActive && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("button", {
     onClick: onMute,
     style: {
-      background: callState.isMuted ? '#ef4444' : '#2a2a2a',
+      background: callState.isMuted ? 'var(--rescue-orange)' : 'var(--surface3)',
       border: 'none',
       borderRadius: '50%',
       width: 48,
       height: 48,
-      color: '#fff',
+      color: callState.isMuted ? '#fff' : 'var(--text)',
       fontSize: 18,
       cursor: 'pointer'
     },
@@ -3051,12 +1981,12 @@ function ActiveCallPanel({
   }, callState.isMuted ? '🔇' : '🎤'), /*#__PURE__*/React.createElement("button", {
     onClick: onSpeaker,
     style: {
-      background: isSpeaker ? '#2563eb' : '#2a2a2a',
+      background: isSpeaker ? 'var(--navy-fill)' : 'var(--surface3)',
       border: 'none',
       borderRadius: '50%',
       width: 48,
       height: 48,
-      color: '#fff',
+      color: isSpeaker ? '#fff' : 'var(--text)',
       fontSize: 18,
       cursor: 'pointer'
     },
@@ -3064,12 +1994,12 @@ function ActiveCallPanel({
   }, "\uD83D\uDD0A"), /*#__PURE__*/React.createElement("button", {
     onClick: onRecord,
     style: {
-      background: callState.isRecording ? '#ef4444' : '#2a2a2a',
+      background: callState.isRecording ? 'var(--rescue-orange)' : 'var(--surface3)',
       border: 'none',
       borderRadius: '50%',
       width: 48,
       height: 48,
-      color: '#fff',
+      color: callState.isRecording ? '#fff' : 'var(--text)',
       fontSize: 18,
       cursor: 'pointer'
     },
@@ -3077,7 +2007,7 @@ function ActiveCallPanel({
   }, callState.isRecording ? '⏹' : '⏺'), /*#__PURE__*/React.createElement("button", {
     onClick: onHangup,
     style: {
-      background: '#ef4444',
+      background: 'var(--rescue-orange)',
       border: 'none',
       borderRadius: '50%',
       width: 48,
@@ -3089,7 +2019,7 @@ function ActiveCallPanel({
   }, "\uD83D\uDCF5")), isRinging && !isInbound && /*#__PURE__*/React.createElement("button", {
     onClick: onHangup,
     style: {
-      background: '#ef4444',
+      background: 'var(--rescue-orange)',
       border: 'none',
       borderRadius: '50%',
       width: 56,
@@ -3100,7 +2030,7 @@ function ActiveCallPanel({
     }
   }, "\uD83D\uDCF5"), isEnded && /*#__PURE__*/React.createElement("div", {
     style: {
-      color: '#9ca3af',
+      color: 'var(--text2)',
       fontSize: 14,
       padding: '8px 0'
     }
@@ -3127,7 +2057,7 @@ function DialerSection({
     style: {
       fontSize: 28,
       fontWeight: 300,
-      color: '#fff',
+      color: 'var(--text)',
       minHeight: 44,
       marginBottom: 24,
       letterSpacing: '0.08em',
@@ -3135,7 +2065,7 @@ function DialerSection({
     }
   }, dialNumber || /*#__PURE__*/React.createElement("span", {
     style: {
-      color: '#9ca3af',
+      color: 'var(--text2)',
       fontSize: 16
     }
   }, "Enter a number")), /*#__PURE__*/React.createElement("div", {
@@ -3152,9 +2082,9 @@ function DialerSection({
       width: 72,
       height: 72,
       borderRadius: '50%',
-      background: '#1a1a1a',
-      border: '1px solid #2a2a2a',
-      color: '#fff',
+      background: 'var(--surface2)',
+      border: '1px solid var(--border)',
+      color: 'var(--text)',
       fontSize: 20,
       cursor: 'pointer',
       display: 'flex',
@@ -3176,7 +2106,7 @@ function DialerSection({
       borderRadius: '50%',
       background: 'none',
       border: 'none',
-      color: '#9ca3af',
+      color: 'var(--text2)',
       fontSize: 20,
       cursor: 'pointer'
     }
@@ -3187,9 +2117,9 @@ function DialerSection({
       width: 72,
       height: 72,
       borderRadius: '50%',
-      background: !dialNumber || !voiceReady ? '#1a1a1a' : '#16a34a',
+      background: !dialNumber || !voiceReady ? 'var(--surface2)' : 'var(--sea-green)',
       border: 'none',
-      color: '#fff',
+      color: !dialNumber || !voiceReady ? 'var(--text3)' : '#fff',
       fontSize: 28,
       cursor: !dialNumber || !voiceReady ? 'default' : 'pointer',
       display: 'flex',
@@ -3203,8 +2133,8 @@ function DialerSection({
       height: 48,
       borderRadius: '50%',
       background: 'none',
-      border: '1px solid #2a2a2a',
-      color: '#9ca3af',
+      border: '1px solid var(--border)',
+      color: 'var(--text2)',
       fontSize: 18,
       cursor: 'pointer',
       fontWeight: 700
@@ -3225,7 +2155,7 @@ function CallLogRow({
   const [expanded, setExpanded] = useState(false);
   return /*#__PURE__*/React.createElement("div", {
     style: {
-      borderBottom: '1px solid #1a1a1a'
+      borderBottom: '1px solid var(--border)'
     }
   }, /*#__PURE__*/React.createElement("div", {
     onClick: () => setExpanded(e => !e),
@@ -3241,7 +2171,7 @@ function CallLogRow({
       width: 36,
       height: 36,
       borderRadius: '50%',
-      background: '#1a1a1a',
+      background: 'var(--surface2)',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
@@ -3257,13 +2187,13 @@ function CallLogRow({
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 14,
-      color: isUnknown ? '#9ca3af' : '#fff',
+      color: isUnknown ? 'var(--text2)' : 'var(--text)',
       marginBottom: 2
     }
   }, knownName || phone), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 12,
-      color: log.status === 'missed' ? '#ef4444' : '#6b7280',
+      color: log.status === 'missed' ? 'var(--rescue-orange)' : 'var(--text3)',
       fontWeight: log.status === 'missed' ? 600 : 400
     }
   }, !isUnknown && knownName && /*#__PURE__*/React.createElement("span", {
@@ -3273,7 +2203,7 @@ function CallLogRow({
   }, phone), log.status, durStr ? ` · ${durStr}` : '', " \xB7 ", relativeTime(log.started_at), log.recording_url_mp3 && /*#__PURE__*/React.createElement("span", {
     style: {
       marginLeft: 6,
-      color: '#3b82f6'
+      color: 'var(--tint)'
     }
   }, "\u25CF REC"))), /*#__PURE__*/React.createElement("div", {
     style: {
@@ -3286,10 +2216,10 @@ function CallLogRow({
     onClick: () => onGoToMessages(phone),
     style: {
       background: 'none',
-      border: '1px solid #2a2a2a',
+      border: '1px solid var(--border)',
       borderRadius: 6,
       padding: '5px 9px',
-      color: '#9ca3af',
+      color: 'var(--text2)',
       cursor: 'pointer',
       fontSize: 11,
       fontWeight: 600
@@ -3299,10 +2229,10 @@ function CallLogRow({
     onClick: () => onCreateContact(phone),
     style: {
       background: 'none',
-      border: '1px solid #16a34a',
+      border: '1px solid var(--sea-green)',
       borderRadius: 6,
       padding: '5px 9px',
-      color: '#16a34a',
+      color: 'var(--sea-green)',
       cursor: 'pointer',
       fontSize: 11,
       fontWeight: 600
@@ -3312,17 +2242,17 @@ function CallLogRow({
     onClick: () => onCall(phone, knownName || null),
     style: {
       background: 'none',
-      border: '1px solid #2a2a2a',
+      border: '1px solid var(--border)',
       borderRadius: 6,
       padding: '6px 10px',
-      color: '#16a34a',
+      color: 'var(--sea-green)',
       cursor: 'pointer',
       fontSize: 14
     },
     title: "Call back"
   }, "\uD83D\uDCDE")), /*#__PURE__*/React.createElement("span", {
     style: {
-      color: '#6b7280',
+      color: 'var(--text3)',
       fontSize: 12,
       flexShrink: 0
     }
@@ -3342,51 +2272,51 @@ function CallLogRow({
     }
   }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", {
     style: {
-      color: '#6b7280'
+      color: 'var(--text3)'
     }
   }, "Direction:"), " ", /*#__PURE__*/React.createElement("span", {
     style: {
-      color: '#fff'
+      color: 'var(--text)'
     }
   }, log.direction || '—')), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", {
     style: {
-      color: '#6b7280'
+      color: 'var(--text3)'
     }
   }, "Status:"), " ", /*#__PURE__*/React.createElement("span", {
     style: {
-      color: '#fff'
+      color: 'var(--text)'
     }
   }, log.status)), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", {
     style: {
-      color: '#6b7280'
+      color: 'var(--text3)'
     }
   }, "From:"), " ", /*#__PURE__*/React.createElement("span", {
     style: {
-      color: '#fff'
+      color: 'var(--text)'
     }
   }, log.from_number || '—')), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", {
     style: {
-      color: '#6b7280'
+      color: 'var(--text3)'
     }
   }, "To:"), " ", /*#__PURE__*/React.createElement("span", {
     style: {
-      color: '#fff'
+      color: 'var(--text)'
     }
   }, log.to_number || '—')), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", {
     style: {
-      color: '#6b7280'
+      color: 'var(--text3)'
     }
   }, "Started:"), " ", /*#__PURE__*/React.createElement("span", {
     style: {
-      color: '#fff'
+      color: 'var(--text)'
     }
   }, formatTime(log.started_at))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", {
     style: {
-      color: '#6b7280'
+      color: 'var(--text3)'
     }
   }, "Duration:"), " ", /*#__PURE__*/React.createElement("span", {
     style: {
-      color: '#fff'
+      color: 'var(--text)'
     }
   }, durStr || '0:00'))), log.recording_url_mp3 && /*#__PURE__*/React.createElement("div", {
     style: {
@@ -3395,7 +2325,7 @@ function CallLogRow({
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 11,
-      color: '#6b7280',
+      color: 'var(--text3)',
       marginBottom: 6,
       letterSpacing: '0.08em',
       textTransform: 'uppercase'
@@ -3412,7 +2342,7 @@ function CallLogRow({
   })), !log.recording_url_mp3 && /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 12,
-      color: '#6b7280',
+      color: 'var(--text3)',
       fontStyle: 'italic'
     }
   }, "No recording available")));
@@ -3427,27 +2357,27 @@ function CallLogsSection({
   const statusIcon = {
     completed: {
       icon: '↗',
-      color: '#16a34a'
+      color: 'var(--sea-green)'
     },
     missed: {
       icon: '↙',
-      color: '#ef4444'
+      color: 'var(--rescue-orange)'
     },
     initiated: {
       icon: '↗',
-      color: '#9ca3af'
+      color: 'var(--text2)'
     },
     failed: {
       icon: '✕',
-      color: '#ef4444'
+      color: 'var(--rescue-orange)'
     },
     declined: {
       icon: '✕',
-      color: '#ef4444'
+      color: 'var(--rescue-orange)'
     },
     answered: {
       icon: '↔',
-      color: '#3b82f6'
+      color: 'var(--tint)'
     }
   };
   function normPhone(p) {
@@ -3469,7 +2399,7 @@ function CallLogsSection({
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      color: '#9ca3af',
+      color: 'var(--text2)',
       fontSize: 14
     }
   }, "No calls yet");
@@ -3481,7 +2411,7 @@ function CallLogsSection({
   }, logs.map(log => {
     const icon = statusIcon[log.status] || {
       icon: '?',
-      color: '#9ca3af'
+      color: 'var(--text2)'
     };
     const rawPhone = log.contact_phone;
     const phone = normalisePhoneFrontend(rawPhone) || rawPhone;
@@ -3524,7 +2454,7 @@ function VoiceTab({
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
-      borderBottom: '1px solid #2a2a2a',
+      borderBottom: '1px solid var(--border)',
       padding: '0 16px'
     }
   }, ['dialer', 'logs'].map(s => /*#__PURE__*/React.createElement("button", {
@@ -3534,8 +2464,8 @@ function VoiceTab({
       background: 'none',
       border: 'none',
       padding: '14px 16px',
-      color: activeSection === s ? '#16a34a' : '#9ca3af',
-      borderBottom: activeSection === s ? '2px solid #16a34a' : '2px solid transparent',
+      color: activeSection === s ? 'var(--tint)' : 'var(--text2)',
+      borderBottom: activeSection === s ? '2px solid var(--tint)' : '2px solid transparent',
       cursor: 'pointer',
       fontSize: 13,
       textTransform: 'capitalize',
@@ -3548,14 +2478,14 @@ function VoiceTab({
       alignItems: 'center',
       gap: 8,
       fontSize: 11,
-      color: '#9ca3af'
+      color: 'var(--text2)'
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       width: 7,
       height: 7,
       borderRadius: '50%',
-      background: '#16a34a'
+      background: 'var(--sea-green)'
     }
   }), "iPhone calling only")), activeSection === 'dialer' && /*#__PURE__*/React.createElement(DialerSection, {
     dialNumber: dialNumber,
@@ -3565,18 +2495,18 @@ function VoiceTab({
   }), activeSection === 'logs' && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
     style: {
       padding: '8px 16px',
-      borderBottom: '1px solid #1a1a1a',
+      borderBottom: '1px solid var(--border)',
       display: 'flex',
       justifyContent: 'flex-end'
     }
   }, /*#__PURE__*/React.createElement("button", {
     onClick: onBackfillRecordings,
     style: {
-      background: '#1a1a1a',
-      border: '1px solid #2a2a2a',
+      background: 'var(--surface2)',
+      border: '1px solid var(--border)',
       borderRadius: 6,
       padding: '5px 12px',
-      color: '#3b82f6',
+      color: 'var(--tint)',
       cursor: 'pointer',
       fontSize: 11,
       fontWeight: 600
@@ -3605,10 +2535,7 @@ function App() {
   const [sseStatus, setSseStatus] = useState('connecting');
   const [sending, setSending] = useState(false);
   const [toasts, setToasts] = useState([]);
-  const [syncing, setSyncing] = useState(false);
-  const [statusSyncing, setStatusSyncing] = useState(false);
-  const [catchingUp, setCatchingUp] = useState(false);
-  const [mainTab, setMainTab] = useState('contacts'); // 'contacts' | 'messages' | 'activity' | 'voice'
+  const [mainTab, setMainTab] = useState('contacts'); // 'contacts' | 'messages' | 'voice'
   const [mobileSub, setMobileSub] = useState('list'); // 'list' | 'thread'
   const [contactPrefill, setContactPrefill] = useState(null);
   const [attachments, setAttachments] = useState([]); // pending composer images
@@ -3634,7 +2561,7 @@ function App() {
   const activeCallRef = useRef(null);
   const durationTimerRef = useRef(null);
   const vibrationIntervalRef = useRef(null);
-  const callerNumberRef = useRef('+13054043184');
+  const callerNumberRef = useRef('+15613630929');
   const callStartRef = useRef(null);
   const callDirectionRef = useRef('outbound');
   const mainTabRef = useRef(mainTab);
@@ -3773,24 +2700,6 @@ function App() {
           });
           return;
         }
-
-        // Dispatch to Activity tab SSE listener
-        window.dispatchEvent(new CustomEvent('vici-sse', {
-          detail: evt
-        }));
-        if (evt.type === 'order_status_updated') {
-          const {
-            phone: updatedPhone,
-            status: updatedStatus
-          } = evt;
-          const now = new Date().toISOString();
-          setConversations(prev => prev.map(c => c.phone === updatedPhone ? {
-            ...c,
-            latest_order_status: updatedStatus,
-            last_seen: now
-          } : c));
-          return;
-        }
         if (evt.type === 'call_update') {
           if (evt.event === 'hangup') {
             loadCallLogs();
@@ -3883,7 +2792,7 @@ function App() {
     if (!document.hidden && document.hasFocus()) return;
     const n = new Notification(title, {
       body,
-      tag: phoneTag ? encodeURIComponent(phoneTag) : 'vici-sms',
+      tag: phoneTag ? encodeURIComponent(phoneTag) : 'shore-inbox',
       icon: '/icons/icon-192.png',
       badge: '/icons/icon-192.png',
       requireInteraction: false
@@ -3935,7 +2844,7 @@ function App() {
   // contains no SDK loader and never requests `/api/voice/token`.
   async function initVoiceClient() {
     setVoiceReady(false);
-    addToast('Calling is available in the Vici Inbox iPhone app');
+    addToast('Calling is available in the Shore Inbox iPhone app');
   }
 
   // Tear down any existing client and reconnect only after an explicit user
@@ -3968,7 +2877,6 @@ function App() {
     const state = call.state;
     const rawPhone = call.options?.remoteCallerNumber || call.options?.destinationNumber || 'Unknown';
     const phone = normalisePhoneFrontend(rawPhone) || rawPhone;
-    console.log('[VOICE] Call state:', state, 'phone: ...' + phone.slice(-4));
     switch (state) {
       case 'ringing':
         callDirectionRef.current = 'inbound';
@@ -4008,13 +2916,10 @@ function App() {
               call_control_id: call.id
             })
           }).then(r => {
-            if (r.ok) {
-              console.log('[VOICE] Outbound auto-record started');
-              setCallState(prev => ({
-                ...prev,
-                isRecording: true
-              }));
-            }
+            if (r.ok) setCallState(prev => ({
+              ...prev,
+              isRecording: true
+            }));
           }).catch(() => {});
         }
         break;
@@ -4225,7 +3130,7 @@ function App() {
     }
   }
 
-  // Called from ContactModal "Open Message Thread" button
+  // Jump from any view straight into a message thread
   function goToMessages(phone) {
     selectContact(phone);
     setMainTab('messages');
@@ -4324,54 +3229,6 @@ function App() {
       checking: false,
       ok: false
     });
-  }
-  async function runCatchup() {
-    try {
-      const preview = await api('GET', '/api/catchup/preview');
-      if (preview.total_to_send === 0) {
-        addToast('No catch-up messages to send — everyone is up to date');
-        return;
-      }
-      const confirmed = window.confirm(`Send catch-up SMS to:\n• ${preview.processing.count} processing orders (order confirmed)\n• ${preview.shipped.count} shipped orders (tracking)\n\nTotal: ${preview.total_to_send} messages\n\nProceed?`);
-      if (!confirmed) return;
-      setCatchingUp(true);
-      addToast(`Sending ${preview.total_to_send} catch-up messages…`);
-      const result = await api('POST', '/api/catchup/send');
-      addToast(`Done — ${result.sent} sent, ${result.failed} failed`);
-      loadConversations();
-    } catch (e) {
-      addToast('Catch-up error: ' + e.message);
-    } finally {
-      setCatchingUp(false);
-    }
-  }
-  async function syncWoo() {
-    setSyncing(true);
-    try {
-      await api('POST', '/api/sync/woocommerce');
-      addToast('WooCommerce sync started — may take 1-2 min');
-      setTimeout(() => {
-        loadConversations();
-        setSyncing(false);
-      }, 5000);
-    } catch (e) {
-      addToast('WooCommerce sync: ' + e.message);
-      setSyncing(false);
-    }
-  }
-  async function syncStatuses() {
-    setStatusSyncing(true);
-    try {
-      await api('POST', '/api/sync/statuses');
-      addToast('Status sync started — contacts updating in real-time…');
-      setTimeout(() => {
-        loadConversations();
-        setStatusSyncing(false);
-      }, 8000);
-    } catch (e) {
-      addToast('Status sync: ' + e.message);
-      setStatusSyncing(false);
-    }
   }
   const totalUnread = conversations.reduce((sum, c) => sum + (c.unread_count || 0), 0);
   const isMobile = useIsMobile();
@@ -4552,7 +3409,7 @@ function App() {
     className: "header"
   }, /*#__PURE__*/React.createElement("div", {
     className: "header-logo"
-  }, "VICI", /*#__PURE__*/React.createElement("small", null, "// SMS")), /*#__PURE__*/React.createElement("div", {
+  }, "The Shore Academy", /*#__PURE__*/React.createElement("small", null, "Inbox")), /*#__PURE__*/React.createElement("div", {
     className: "header-tabs"
   }, /*#__PURE__*/React.createElement("button", {
     className: `header-tab${mainTab === 'contacts' ? ' active' : ''}`,
@@ -4561,9 +3418,6 @@ function App() {
     className: `header-tab${mainTab === 'messages' ? ' active' : ''}`,
     onClick: () => setMainTab('messages')
   }, "MESSAGES ", totalUnread > 0 && `(${totalUnread})`), /*#__PURE__*/React.createElement("button", {
-    className: `header-tab${mainTab === 'activity' ? ' active' : ''}`,
-    onClick: () => setMainTab('activity')
-  }, "ACTIVITY"), /*#__PURE__*/React.createElement("button", {
     className: `header-tab${mainTab === 'voice' ? ' active' : ''}`,
     onClick: () => setMainTab('voice')
   }, "VOICE", /*#__PURE__*/React.createElement("span", {
@@ -4571,7 +3425,7 @@ function App() {
       width: 6,
       height: 6,
       borderRadius: '50%',
-      background: voiceReady ? '#16a34a' : '#9ca3af',
+      background: voiceReady ? 'var(--sea-green)' : 'var(--text3)',
       display: 'inline-block',
       marginLeft: 5,
       verticalAlign: 'middle'
@@ -4605,23 +3459,8 @@ function App() {
     }
   }, "\u2709\uFE0E TEST"), /*#__PURE__*/React.createElement("button", {
     className: "hdr-btn",
-    disabled: statusSyncing,
-    onClick: syncStatuses,
-    title: "Update all order statuses from WooCommerce \u2014 no messages sent"
-  }, statusSyncing ? '…' : '↻ STATUS'), /*#__PURE__*/React.createElement("button", {
-    className: "hdr-btn",
-    disabled: syncing,
-    onClick: syncWoo,
-    title: "Sync WooCommerce orders + contacts"
-  }, syncing ? '…' : '↻ WOO'), /*#__PURE__*/React.createElement("button", {
-    className: "hdr-btn hdr-btn-catchup",
-    disabled: catchingUp,
-    onClick: runCatchup,
-    title: "Send catch-up SMS to processing/shipped orders that never got automated messages"
-  }, catchingUp ? '…' : '✉ CATCHUP'), /*#__PURE__*/React.createElement("button", {
-    className: "hdr-btn",
     onClick: handleLogout
-  }, "EXIT"))), /*#__PURE__*/React.createElement("div", {
+  }, "SIGN OUT"))), /*#__PURE__*/React.createElement("div", {
     className: "main-content"
   }, mainTab === 'contacts' && /*#__PURE__*/React.createElement(ContactsView, {
     conversations: conversations,
@@ -4654,8 +3493,6 @@ function App() {
     replyTarget: replyTarget,
     setReplyTarget: setReplyTarget,
     onReact: handleReact
-  }), mainTab === 'activity' && /*#__PURE__*/React.createElement(ActivityTab, {
-    sseStatus: sseStatus
   }), mainTab === 'voice' && /*#__PURE__*/React.createElement(VoiceTab, {
     callLogs: callLogs,
     dialNumber: dialNumber,
@@ -4711,11 +3548,6 @@ function App() {
   }, "\u2709"), "Messages", totalUnread > 0 && /*#__PURE__*/React.createElement("span", {
     className: "bnav-badge"
   }, totalUnread)), /*#__PURE__*/React.createElement("button", {
-    className: `bnav-btn${mainTab === 'activity' ? ' active' : ''}`,
-    onClick: () => setMainTab('activity')
-  }, /*#__PURE__*/React.createElement("span", {
-    className: "bnav-icon"
-  }, "\u26A1"), "Activity"), /*#__PURE__*/React.createElement("button", {
     className: `bnav-btn${mainTab === 'voice' ? ' active' : ''}`,
     onClick: () => setMainTab('voice')
   }, /*#__PURE__*/React.createElement("span", {
@@ -4725,7 +3557,7 @@ function App() {
       width: 6,
       height: 6,
       borderRadius: '50%',
-      background: voiceReady ? '#16a34a' : '#9ca3af',
+      background: voiceReady ? 'var(--sea-green)' : 'var(--text3)',
       display: 'inline-block',
       marginLeft: 4
     }

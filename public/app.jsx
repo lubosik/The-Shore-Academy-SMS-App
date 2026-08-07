@@ -180,6 +180,100 @@ function ToastContainer({ toasts }) {
 
 // ─── Login ───────────────────────────────────────────────────────────────────
 
+// Layered animated ocean waves behind the login form. Mirrors the iOS login
+// wave (ShoreTheme.waveDeep / waveMid / waveShallow). Canvas + rAF, scaled for
+// devicePixelRatio. Respects prefers-reduced-motion by drawing a single still
+// frame, and cancels the rAF loop + listeners on unmount.
+const WAVE_LAYERS = [
+  // Shallow water at the back, deep navy at the front — opacity fakes depth.
+  { color: '#5E93B8', opacity: 0.30, amplitude: 0.045, wavelength: 1.35, speed: 0.22, yOffset: 0.62, phase: 0.0 },
+  { color: '#2E6288', opacity: 0.45, amplitude: 0.060, wavelength: 1.05, speed: -0.15, yOffset: 0.70, phase: 2.2 },
+  { color: '#123A5A', opacity: 0.90, amplitude: 0.075, wavelength: 0.85, speed: 0.10, yOffset: 0.80, phase: 4.4 }
+];
+
+function WaveBackdrop() {
+  const canvasRef = useRef(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    let rafId = null;
+    let width = 0, height = 0;
+
+    const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+
+    function resize() {
+      const dpr = window.devicePixelRatio || 1;
+      width = canvas.clientWidth;
+      height = canvas.clientHeight;
+      canvas.width = Math.round(width * dpr);
+      canvas.height = Math.round(height * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+
+    function drawFrame(tSeconds) {
+      ctx.clearRect(0, 0, width, height);
+      for (const layer of WAVE_LAYERS) {
+        const amp = layer.amplitude * height;
+        const baseline = layer.yOffset * height;
+        const k = (Math.PI * 2) / (layer.wavelength * width);
+        const phase = layer.phase + tSeconds * layer.speed * Math.PI * 2;
+        ctx.beginPath();
+        ctx.moveTo(0, baseline + Math.sin(phase) * amp);
+        const step = Math.max(8, width / 90);
+        for (let x = step; x <= width + step; x += step) {
+          // Two sine terms per layer so crests drift instead of marching
+          const y = baseline
+            + Math.sin(x * k + phase) * amp
+            + Math.sin(x * k * 0.5 - phase * 0.6) * amp * 0.4;
+          ctx.lineTo(x, y);
+        }
+        ctx.lineTo(width, height);
+        ctx.lineTo(0, height);
+        ctx.closePath();
+        ctx.globalAlpha = layer.opacity;
+        ctx.fillStyle = layer.color;
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    function loop(now) {
+      drawFrame(now / 1000);
+      rafId = requestAnimationFrame(loop);
+    }
+
+    function start() {
+      if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
+      resize();
+      if (motionQuery.matches) {
+        drawFrame(0); // still wave, no animation
+      } else {
+        rafId = requestAnimationFrame(loop);
+      }
+    }
+
+    function handleResize() {
+      resize();
+      if (motionQuery.matches) drawFrame(0);
+    }
+
+    start();
+    window.addEventListener('resize', handleResize);
+    const motionHandler = () => start();
+    motionQuery.addEventListener('change', motionHandler);
+
+    return () => {
+      if (rafId !== null) cancelAnimationFrame(rafId);
+      window.removeEventListener('resize', handleResize);
+      motionQuery.removeEventListener('change', motionHandler);
+    };
+  }, []);
+
+  return <canvas ref={canvasRef} className="wave-canvas" aria-hidden="true" />;
+}
+
 function LoginScreen({ onLogin }) {
   const [pw, setPw] = useState('');
   const [show, setShow] = useState(false);
@@ -198,9 +292,10 @@ function LoginScreen({ onLogin }) {
 
   return (
     <div className="login-screen">
+      <WaveBackdrop />
       <div className="login-card">
-        <div className="login-logo">VICI<small>// SMS</small></div>
-        <div className="login-subtitle">Secure Inbox Access</div>
+        <div className="login-logo">The Shore Academy</div>
+        <div className="login-subtitle">Team Inbox</div>
         <form onSubmit={handleSubmit}>
           <div className="input-wrap">
             <input
@@ -215,7 +310,7 @@ function LoginScreen({ onLogin }) {
             </button>
           </div>
           <button className="btn-primary" type="submit" disabled={loading || !pw}>
-            {loading ? <span className="spinner" style={{ borderTopColor: '#030712' }} /> : 'AUTHENTICATE'}
+            {loading ? <span className="spinner" style={{ borderTopColor: '#fff' }} /> : 'Sign In'}
           </button>
           <div className="error-msg">{error}</div>
         </form>
@@ -224,273 +319,9 @@ function LoginScreen({ onLogin }) {
   );
 }
 
-// ─── Order Card (inside modal) ────────────────────────────────────────────────
+// ─── Shore Pinned Card ────────────────────────────────────────────────────────
 
-function OrderCard({ order }) {
-  const smsDots = [
-    { sent: order.order_sms_sent, title: 'Order confirmed SMS' },
-    { sent: order.shipped_sms_sent, title: 'Shipped SMS' },
-    { sent: order.delivery_sms_sent, title: 'Delivered SMS' }
-  ];
-  return (
-    <div className="order-card">
-      <div className="order-card-header">
-        <span className="order-num">#{order.woo_order_id || '—'}</span>
-        <span className={`order-badge ${order.status}`}>{order.status}</span>
-        <span className="order-total">${parseFloat(order.total || 0).toFixed(2)}</span>
-      </div>
-      {(order.items || []).slice(0, 3).map((item, i) => (
-        <div key={i} className="order-item">
-          <span className="order-item-qty">×{item.quantity}</span>{item.name}
-        </div>
-      ))}
-      {(order.items || []).length > 3 && (
-        <div className="order-item" style={{ color: 'var(--text3)' }}>+{order.items.length - 3} more items</div>
-      )}
-      <div className="order-footer">
-        <span className="order-date">{formatDate(order.created_at)}</span>
-        {order.tracking_number && (
-          <span className="tracking-line">📦 {order.carrier?.toUpperCase()} {order.tracking_number}</span>
-        )}
-        <div className="sms-dots" title={smsDots.map(d => d.title + ': ' + (d.sent ? '✓' : 'pending')).join('\n')}>
-          {smsDots.map((d, i) => (
-            <div key={i} className={`sms-dot ${d.sent ? 'sent' : 'unsent'}`} />
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── Suggestion Card ──────────────────────────────────────────────────────────
-
-function SuggestionCard({ s, onSend, onDismiss }) {
-  const [sending, setSending] = useState(false);
-  const [gone, setGone] = useState(false);
-  if (gone) return null;
-  return (
-    <div className="suggestion-card">
-      <div className="sug-type">{s.suggestion_type?.replace(/_/g, ' ')}</div>
-      <div className="sug-reason">{s.suggestion_text}</div>
-      <div className="sug-msg">{s.suggested_message}</div>
-      <div className="sug-actions">
-        <button className="btn-sug-send" disabled={sending} onClick={async () => {
-          setSending(true);
-          await onSend(s.id);
-          setSending(false); setGone(true);
-        }}>
-          {sending ? <span className="spinner" style={{ borderTopColor: '#030712' }} /> : 'Send'}
-        </button>
-        <button className="btn-sug-dismiss" onClick={() => { onDismiss(s.id); setGone(true); }}>Dismiss</button>
-      </div>
-    </div>
-  );
-}
-
-// ─── Contact Modal (3D popup) ─────────────────────────────────────────────────
-
-function ContactModal({ phone, onClose, onGoToMessages, addToast }) {
-  const [profile, setProfile] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState('orders');
-  const [analysing, setAnalysing] = useState(false);
-
-  useEffect(() => {
-    setProfile(null); setLoading(true); setTab('orders');
-    api('GET', `/api/contacts/${encodeURIComponent(phone)}`)
-      .then(setProfile)
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [phone]);
-
-  // Close on escape or backdrop click
-  useEffect(() => {
-    const handler = (e) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [onClose]);
-
-  async function reanalyse() {
-    setAnalysing(true);
-    try {
-      await api('POST', `/api/intelligence/analyse/${encodeURIComponent(phone)}`);
-      const d = await api('GET', `/api/contacts/${encodeURIComponent(phone)}`);
-      setProfile(d);
-      addToast('Analysis updated');
-    } catch { addToast('Analysis failed'); }
-    setAnalysing(false);
-  }
-
-  async function sendSuggestion(id) {
-    await api('POST', `/api/intelligence/campaigns/${id}/send`);
-    addToast('Message sent');
-    const d = await api('GET', `/api/contacts/${encodeURIComponent(phone)}`);
-    setProfile(d);
-  }
-
-  async function dismissSuggestion(id) {
-    await api('POST', `/api/intelligence/campaigns/${id}/dismiss`);
-  }
-
-  const intel = profile?.intelligence;
-  const suggestions = profile?.suggestions || [];
-  const latestOrderStatus = profile?.orders?.[0]?.status || 'none';
-
-  return (
-    <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="modal-card">
-        {/* Close button row */}
-        <div className="modal-header">
-          <div style={{ width: 30 }} />
-          <button className="modal-close" onClick={onClose}>✕</button>
-        </div>
-
-        {loading && (
-          <div style={{ textAlign: 'center', padding: '3rem' }}>
-            <span className="spinner" style={{ width: '24px', height: '24px' }} />
-          </div>
-        )}
-
-        {!loading && profile && (
-          <>
-            {/* Identity */}
-            <div className="modal-identity">
-              <div className="modal-avatar">{getInitials(profile)}</div>
-              <div className="modal-info">
-                <div className="modal-name">{profile.name || 'Unknown'}</div>
-                <div className="modal-phone">{profile.phone}</div>
-                {profile.email && <div className="modal-email">{profile.email}</div>}
-                {(profile.city || profile.state) && (
-                  <div className="modal-location">
-                    {[profile.city, profile.state, profile.country].filter(Boolean).join(', ')}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Stats */}
-            <div className="modal-stats">
-              <div className="modal-stat">
-                <div className="modal-stat-val">{profile.total_orders}</div>
-                <div className="modal-stat-label">Orders</div>
-              </div>
-              <div className="modal-stat">
-                <div className="modal-stat-val">${profile.total_spent?.toFixed(0) || '0'}</div>
-                <div className="modal-stat-label">Spent</div>
-              </div>
-              <div className="modal-stat">
-                <div className="modal-stat-val" style={{ fontSize: '0.75rem' }}>
-                  {profile.orders?.[0] ? relativeTime(profile.orders[0].created_at) : '—'}
-                </div>
-                <div className="modal-stat-label">Last Order</div>
-              </div>
-            </div>
-
-            {/* Tabs */}
-            <div className="modal-tabs">
-              <button className={`modal-tab${tab === 'orders' ? ' active' : ''}`} onClick={() => setTab('orders')}>
-                Orders {profile.orders?.length > 0 && `(${profile.orders.length})`}
-              </button>
-              <button className={`modal-tab${tab === 'intel' ? ' active' : ''}`} onClick={() => setTab('intel')}>
-                Intelligence
-              </button>
-            </div>
-
-            {/* Tab body */}
-            <div className="modal-body">
-              {tab === 'orders' && (
-                <>
-                  {profile.orders.length === 0 ? (
-                    <div className="orders-empty">
-                      No orders found.<br />
-                      <span style={{ color: 'var(--text3)', fontSize: '0.75rem' }}>Click ↻ WOO to sync WooCommerce orders.</span>
-                    </div>
-                  ) : (
-                    profile.orders.map(order => <OrderCard key={order.id} order={order} />)
-                  )}
-                </>
-              )}
-
-              {tab === 'intel' && (
-                <>
-                  <div className="reanalyse-row">
-                    <button className="reanalyse-btn" onClick={reanalyse} disabled={analysing}>
-                      {analysing ? <span className="spinner" /> : '↺ Re-analyse'}
-                    </button>
-                    {intel?.last_analysed && (
-                      <span className="last-analysed-txt">Last: {relativeTime(intel.last_analysed)}</span>
-                    )}
-                  </div>
-
-                  {!intel ? (
-                    <div className="intel-summary" style={{ color: 'var(--text3)' }}>
-                      No analysis yet. Send this contact a message, then click re-analyse.
-                    </div>
-                  ) : (
-                    <>
-                      {intel.raw_summary && (
-                        <div className="intel-section">
-                          <div className="intel-label">AI Summary</div>
-                          <div className="intel-summary">{intel.raw_summary}</div>
-                        </div>
-                      )}
-                      {intel.sentiment && (
-                        <div className="intel-section">
-                          <div className="intel-label">Sentiment</div>
-                          <span className={`sentiment-badge ${intel.sentiment}`}>{intel.sentiment}</span>
-                        </div>
-                      )}
-                      {intel.inferred_interests?.length > 0 && (
-                        <div className="intel-section">
-                          <div className="intel-label">Interests</div>
-                          {intel.inferred_interests.map((x, i) => <span key={i} className="tag-chip green">{x}</span>)}
-                        </div>
-                      )}
-                      {intel.order_signals?.length > 0 && (
-                        <div className="intel-section">
-                          <div className="intel-label">Purchase Signals</div>
-                          <ul className="signal-list">
-                            {intel.order_signals.map((s, i) => <li key={i}>{s}</li>)}
-                          </ul>
-                        </div>
-                      )}
-                      {intel.restock_interests?.length > 0 && (
-                        <div className="intel-section">
-                          <div className="intel-label">Restock Watch</div>
-                          {intel.restock_interests.map((x, i) => <span key={i} className="tag-chip orange">{x}</span>)}
-                        </div>
-                      )}
-                    </>
-                  )}
-
-                  {suggestions.length > 0 && (
-                    <div className="intel-section">
-                      <div className="intel-label" style={{ marginBottom: '0.625rem' }}>Campaign Suggestions</div>
-                      {suggestions.map(s => (
-                        <SuggestionCard key={s.id} s={s} onSend={sendSuggestion} onDismiss={dismissSuggestion} />
-                      ))}
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-
-            {/* Footer: go to messages */}
-            <div className="modal-footer">
-              <button className="btn-message" onClick={() => { onGoToMessages(profile.phone); onClose(); }}>
-                Open Message Thread →
-              </button>
-            </div>
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ─── Vici Pinned Card ─────────────────────────────────────────────────────────
-
-function ViciModal({ onClose }) {
+function ShoreModal({ onClose }) {
   useEffect(() => {
     const handler = (e) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', handler);
@@ -504,20 +335,20 @@ function ViciModal({ onClose }) {
           <span style={{
             fontSize: '0.6rem', fontFamily: 'var(--mono)', color: 'var(--accent)',
             letterSpacing: '0.1em', padding: '0.15rem 0.5rem',
-            background: 'var(--accent-dim)', border: '1px solid rgba(0,245,160,0.2)', borderRadius: 4
+            background: 'var(--accent-dim)', border: '1px solid var(--border-bright)', borderRadius: 4
           }}>PINNED · OUR NUMBER</span>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
         <div className="modal-identity">
-          <div className="modal-avatar" style={{ background: 'var(--accent-dim)', fontSize: '1.25rem' }}>V</div>
+          <div className="modal-avatar" style={{ fontSize: '1.25rem' }}>S</div>
           <div className="modal-info">
-            <div className="modal-name">Vici Peptides</div>
-            <div className="modal-phone" style={{ fontSize: '1rem', letterSpacing: '0.04em' }}>+1 (305) 404-3184</div>
+            <div className="modal-name">The Shore Academy</div>
+            <div className="modal-phone" style={{ fontSize: '1rem', letterSpacing: '0.04em' }}>+1 (561) 363-0929</div>
             <a
-              href="https://vicipeptides.com" target="_blank" rel="noopener noreferrer"
+              href="https://theshoreacademy.com" target="_blank" rel="noopener noreferrer"
               style={{ fontSize: '0.75rem', color: 'var(--blue)', fontFamily: 'var(--mono)', textDecoration: 'none', display: 'block', marginTop: 4 }}
             >
-              vicipeptides.com ↗
+              theshoreacademy.com ↗
             </a>
           </div>
         </div>
@@ -525,21 +356,21 @@ function ViciModal({ onClose }) {
           padding: '0.875rem 1.25rem', borderTop: '1px solid var(--border)',
           color: 'var(--text3)', fontSize: '0.6875rem', fontFamily: 'var(--mono)'
         }}>
-          // this is the number your customers text
+          This is the number your families text
         </div>
       </div>
     </div>
   );
 }
 
-function ViciPinnedCard({ onClick }) {
+function ShorePinnedCard({ onClick }) {
   return (
-    <div className="contact-card vici-card" onClick={onClick}>
-      <div className="card-avatar vici-avatar">V</div>
-      <div className="card-name">Vici Peptides</div>
-      <div className="card-phone">(305) 404-3184</div>
+    <div className="contact-card shore-card" onClick={onClick}>
+      <div className="card-avatar shore-avatar">S</div>
+      <div className="card-name">The Shore Academy</div>
+      <div className="card-phone">(561) 363-0929</div>
       <div className="card-meta">
-        <span className="vici-pin-badge">📌 OUR NUMBER</span>
+        <span className="shore-pin-badge">📌 OUR NUMBER</span>
       </div>
     </div>
   );
@@ -556,7 +387,7 @@ function ContactsView({ conversations, onGoToMessages, onCall, addToast, onRefre
   const [createError, setCreateError] = useState('');
   const [isEditing, setIsEditing] = useState(false);
   const [loadingDetail, setLoadingDetail] = useState(false);
-  const [showViciModal, setShowViciModal] = useState(false);
+  const [showShoreModal, setShowShoreModal] = useState(false);
 
   // Pre-fill from call log "Create Contact" button
   useEffect(() => {
@@ -568,15 +399,13 @@ function ContactsView({ conversations, onGoToMessages, onCall, addToast, onRefre
     }
   }, [prefillPhone]);
 
-  // Sort by most recent activity: latest order date > last_seen > last message
+  // Sort by most recent activity: last_seen > last message
   const sorted = [...conversations].sort((a, b) => {
     const aKey = Math.max(
-      a.latest_order_date ? new Date(a.latest_order_date).getTime() : 0,
       a.last_seen ? new Date(a.last_seen).getTime() : 0,
       a.lastMessage?.created_at ? new Date(a.lastMessage.created_at).getTime() : 0
     );
     const bKey = Math.max(
-      b.latest_order_date ? new Date(b.latest_order_date).getTime() : 0,
       b.last_seen ? new Date(b.last_seen).getTime() : 0,
       b.lastMessage?.created_at ? new Date(b.lastMessage.created_at).getTime() : 0
     );
@@ -621,7 +450,7 @@ function ContactsView({ conversations, onGoToMessages, onCall, addToast, onRefre
       setIsCreating(false);
       setNewContact({ first_name: '', last_name: '', phone: '', email: '', notes: '' });
       if (onRefresh) await onRefresh();
-      setSelectedContact({ contact: data.contact, orders: [] });
+      setSelectedContact({ contact: data.contact, messages: [], total_messages: 0 });
     } catch (err) {
       setCreateError(err.message);
     }
@@ -649,36 +478,36 @@ function ContactsView({ conversations, onGoToMessages, onCall, addToast, onRefre
       {showList && (
         <div style={{
           width: selectedContact && !isMobile ? '320px' : '100%',
-          borderRight: selectedContact && !isMobile ? '1px solid #2a2a2a' : 'none',
+          borderRight: selectedContact && !isMobile ? '1px solid var(--border)' : 'none',
           display: 'flex', flexDirection: 'column', flexShrink: 0, overflow: 'hidden'
         }}>
-          <div style={{ padding: '14px 16px', borderBottom: '1px solid #2a2a2a', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-            <div style={{ flex: 1, fontSize: 15, fontWeight: 600, color: '#fff' }}>
+          <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+            <div style={{ flex: 1, fontSize: 15, fontWeight: 600, color: 'var(--text)' }}>
               Contacts
-              <span style={{ marginLeft: 8, fontSize: 12, color: '#9ca3af', fontWeight: 400 }}>{conversations.length}</span>
+              <span style={{ marginLeft: 8, fontSize: 12, color: 'var(--text2)', fontWeight: 400 }}>{conversations.length}</span>
             </div>
             <button
               onClick={() => { setIsCreating(true); setCreateError(''); }}
-              style={{ background: '#16a34a', border: 'none', borderRadius: 6, padding: '7px 14px', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+              style={{ background: 'var(--navy-fill)', border: 'none', borderRadius: 6, padding: '7px 14px', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
             >
               + New
             </button>
           </div>
 
-          <div style={{ padding: '10px 16px', borderBottom: '1px solid #2a2a2a', flexShrink: 0 }}>
+          <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
             <input
               type="text"
               placeholder="Search by name or number..."
               value={search}
               onChange={e => setSearch(e.target.value)}
-              style={{ width: '100%', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 6, padding: '8px 12px', color: '#fff', fontSize: 13, outline: 'none', boxSizing: 'border-box' }}
+              style={{ width: '100%', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 6, padding: '8px 12px', color: 'var(--text)', fontSize: 13, outline: 'none', boxSizing: 'border-box' }}
             />
           </div>
 
           <div style={{ flex: 1, overflowY: 'auto' }}>
-            <ViciPinnedCard onClick={() => setShowViciModal(true)} />
+            <ShorePinnedCard onClick={() => setShowShoreModal(true)} />
             {filtered.length === 0 && (
-              <div style={{ padding: 32, textAlign: 'center', color: '#9ca3af', fontSize: 13 }}>
+              <div style={{ padding: 32, textAlign: 'center', color: 'var(--text2)', fontSize: 13 }}>
                 {search ? `No contacts match "${search}"` : 'No contacts yet'}
               </div>
             )}
@@ -712,12 +541,12 @@ function ContactsView({ conversations, onGoToMessages, onCall, addToast, onRefre
 
       {/* Mobile full-screen detail */}
       {selectedContact && isMobile && (
-        <div style={{ position: 'fixed', inset: 0, background: '#0a0a0a', zIndex: 100, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          <div style={{ padding: '12px 16px', borderBottom: '1px solid #2a2a2a', display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
-            <button onClick={() => setSelectedContact(null)} style={{ background: 'none', border: 'none', color: '#9ca3af', fontSize: 20, cursor: 'pointer', padding: '4px 8px' }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'var(--bg)', zIndex: 100, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
+            <button onClick={() => setSelectedContact(null)} style={{ background: 'none', border: 'none', color: 'var(--text2)', fontSize: 20, cursor: 'pointer', padding: '4px 8px' }}>
               ←
             </button>
-            <span style={{ fontSize: 15, fontWeight: 600, color: '#fff' }}>
+            <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)' }}>
               {selectedContact.contact?.display_name || selectedContact.contact?.phone}
             </span>
           </div>
@@ -745,7 +574,7 @@ function ContactsView({ conversations, onGoToMessages, onCall, addToast, onRefre
           error={createError}
         />
       )}
-      {showViciModal && <ViciModal onClose={() => setShowViciModal(false)} />}
+      {showShoreModal && <ShoreModal onClose={() => setShowShoreModal(false)} />}
     </div>
   );
 }
@@ -762,31 +591,23 @@ function ContactRow({ contact, isSelected, onClick }) {
     return displayName.slice(0, 2).toUpperCase();
   })();
 
-  const statusColour = {
-    completed: '#16a34a', processing: '#3b82f6', 'on-hold': '#f59e0b',
-    shipped: '#a855f7', delivered: '#16a34a', failed: '#ef4444',
-    cancelled: '#9ca3af', refunded: '#9ca3af', pending: '#6b7280'
-  };
-  const latestStatus = contact.latest_order_status;
-  const statusColor = latestStatus ? (statusColour[latestStatus] || '#9ca3af') : null;
-
   return (
     <div
       onClick={onClick}
       style={{
         display: 'flex', alignItems: 'center', gap: 12,
         padding: '11px 16px', cursor: 'pointer',
-        background: isSelected ? '#1a2a1a' : 'transparent',
-        borderLeft: isSelected ? '2px solid #16a34a' : '2px solid transparent',
-        borderBottom: '1px solid #111'
+        background: isSelected ? 'var(--accent-dim)' : 'transparent',
+        borderLeft: isSelected ? '2px solid var(--tint)' : '2px solid transparent',
+        borderBottom: '1px solid var(--border)'
       }}
     >
       {/* Avatar */}
       <div style={{
         width: 38, height: 38, borderRadius: '50%',
-        background: contact.avatar_url ? 'transparent' : '#222',
+        background: contact.avatar_url ? 'transparent' : 'var(--sand-fill)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: 13, fontWeight: 600, color: '#9ca3af', flexShrink: 0,
+        fontSize: 13, fontWeight: 600, color: 'var(--on-sand)', flexShrink: 0,
         overflow: 'hidden'
       }}>
         {contact.avatar_url
@@ -795,26 +616,15 @@ function ContactRow({ contact, isSelected, onClick }) {
       </div>
 
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 14, color: '#fff', marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <div style={{ fontSize: 14, color: 'var(--text)', marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {displayName}
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ fontSize: 12, color: '#6b7280' }}>{contact.phone}</span>
-          {latestStatus && (
-            <span style={{
-              fontSize: 10, padding: '1px 6px', borderRadius: 4,
-              background: `${statusColor}22`, color: statusColor,
-              textTransform: 'capitalize', fontWeight: 600
-            }}>
-              {latestStatus}
-            </span>
-          )}
-        </div>
+        <span style={{ fontSize: 12, color: 'var(--text3)' }}>{contact.phone}</span>
       </div>
 
       {(contact.unread_count || 0) > 0 && (
         <div style={{
-          minWidth: 18, height: 18, borderRadius: 9, background: '#3b82f6',
+          minWidth: 18, height: 18, borderRadius: 9, background: 'var(--rescue-orange)',
           color: '#fff', fontSize: 10, fontWeight: 700,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           padding: '0 5px', flexShrink: 0
@@ -829,7 +639,9 @@ function ContactRow({ contact, isSelected, onClick }) {
 // ─── Contact Detail ───────────────────────────────────────────────────────────
 
 function ContactDetail({ data, loading, onCall, onMessage, isEditing, onEditOpen, onEditCancel, onEditSave }) {
-  const { contact, orders } = data;
+  // /api/contacts/:phone returns { contact, messages, total_messages } —
+  // GoHighLevel is the system of record for everything else about a person.
+  const { contact, total_messages: totalMessages } = data;
   const [editData, setEditData] = useState({
     first_name: contact.first_name || '',
     last_name: contact.last_name || '',
@@ -869,15 +681,9 @@ function ContactDetail({ data, loading, onCall, onMessage, isEditing, onEditOpen
     return displayName.slice(0, 2).toUpperCase();
   })();
 
-  const statusColour = {
-    completed: '#16a34a', processing: '#3b82f6', 'on-hold': '#f59e0b',
-    failed: '#ef4444', cancelled: '#9ca3af', refunded: '#9ca3af',
-    shipped: '#a855f7', delivered: '#16a34a'
-  };
-
   const detailInput = {
-    width: '100%', background: '#111', border: '1px solid #2a2a2a',
-    borderRadius: 6, padding: '9px 12px', color: '#fff',
+    width: '100%', background: 'var(--surface2)', border: '1px solid var(--border)',
+    borderRadius: 6, padding: '9px 12px', color: 'var(--text)',
     fontSize: 13, outline: 'none', boxSizing: 'border-box'
   };
 
@@ -892,21 +698,21 @@ function ContactDetail({ data, loading, onCall, onMessage, isEditing, onEditOpen
   return (
     <div style={{ height: '100%', overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
       {/* Contact header */}
-      <div style={{ padding: '24px 24px 16px', borderBottom: '1px solid #2a2a2a' }}>
+      <div style={{ padding: '24px 24px 16px', borderBottom: '1px solid var(--border)' }}>
         {/* Avatar */}
         <div style={{ position: 'relative', width: 56, marginBottom: 12, display: 'inline-block' }}>
           <div style={{
             width: 56, height: 56, borderRadius: '50%',
-            background: (isEditing ? editData.avatar_url : contact.avatar_url) ? 'transparent' : '#222',
+            background: (isEditing ? editData.avatar_url : contact.avatar_url) ? 'transparent' : 'var(--sand-fill)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 20, fontWeight: 600, color: '#9ca3af', overflow: 'hidden'
+            fontSize: 20, fontWeight: 600, color: 'var(--on-sand)', overflow: 'hidden'
           }}>
             {(isEditing ? editData.avatar_url : contact.avatar_url)
               ? <img src={isEditing ? editData.avatar_url : contact.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
               : initials}
           </div>
           {isEditing && (
-            <label style={{ position: 'absolute', bottom: -2, right: -2, width: 20, height: 20, borderRadius: '50%', background: '#16a34a', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 10 }}>
+            <label style={{ position: 'absolute', bottom: -2, right: -2, width: 20, height: 20, borderRadius: '50%', background: 'var(--navy-fill)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 10 }}>
               +
               <input type="file" accept="image/*" onChange={handleAvatarUpload} style={{ display: 'none' }} />
             </label>
@@ -915,22 +721,22 @@ function ContactDetail({ data, loading, onCall, onMessage, isEditing, onEditOpen
 
         {!isEditing && (
           <>
-            <div style={{ fontSize: 20, fontWeight: 600, color: '#fff', marginBottom: 2 }}>{displayName}</div>
-            <div style={{ fontSize: 13, color: '#9ca3af', marginBottom: contact.email ? 2 : 12 }}>{contact.phone}</div>
-            {contact.email && <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 12 }}>{contact.email}</div>}
+            <div style={{ fontSize: 20, fontWeight: 600, color: 'var(--text)', marginBottom: 2 }}>{displayName}</div>
+            <div style={{ fontSize: 13, color: 'var(--text2)', marginBottom: contact.email ? 2 : 12 }}>{contact.phone}</div>
+            {contact.email && <div style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 12 }}>{contact.email}</div>}
             {contact.notes && (
-              <div style={{ fontSize: 13, color: '#9ca3af', background: '#1a1a1a', borderRadius: 6, padding: '8px 12px', marginBottom: 12 }}>
+              <div style={{ fontSize: 13, color: 'var(--text2)', background: 'var(--surface2)', borderRadius: 6, padding: '8px 12px', marginBottom: 12 }}>
                 {contact.notes}
               </div>
             )}
             <div style={{ display: 'flex', gap: 10 }}>
-              <button onClick={() => onMessage(contact.phone)} style={{ flex: 1, padding: '10px', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 8, color: '#fff', fontSize: 13, cursor: 'pointer', fontWeight: 500 }}>
+              <button onClick={() => onMessage(contact.phone)} style={{ flex: 1, padding: '10px', background: 'var(--navy-fill)', border: 'none', borderRadius: 8, color: '#fff', fontSize: 13, cursor: 'pointer', fontWeight: 500 }}>
                 Message
               </button>
-              <button onClick={() => onCall(contact.phone, displayName)} style={{ flex: 1, padding: '10px', background: '#16a34a', border: 'none', borderRadius: 8, color: '#fff', fontSize: 13, cursor: 'pointer', fontWeight: 500 }}>
+              <button onClick={() => onCall(contact.phone, displayName)} style={{ flex: 1, padding: '10px', background: 'var(--sea-green)', border: 'none', borderRadius: 8, color: '#fff', fontSize: 13, cursor: 'pointer', fontWeight: 500 }}>
                 Call
               </button>
-              <button onClick={onEditOpen} style={{ padding: '10px 14px', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 8, color: '#9ca3af', fontSize: 13, cursor: 'pointer' }}>
+              <button onClick={onEditOpen} style={{ padding: '10px 14px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text2)', fontSize: 13, cursor: 'pointer' }}>
                 Edit
               </button>
             </div>
@@ -954,11 +760,11 @@ function ContactDetail({ data, loading, onCall, onMessage, isEditing, onEditOpen
                   delete updates.phone;
                   onEditSave(contact.phone, updates);
                 }}
-                style={{ flex: 1, padding: '10px', background: '#16a34a', border: 'none', borderRadius: 8, color: '#fff', fontSize: 13, cursor: 'pointer', fontWeight: 600 }}
+                style={{ flex: 1, padding: '10px', background: 'var(--navy-fill)', border: 'none', borderRadius: 8, color: '#fff', fontSize: 13, cursor: 'pointer', fontWeight: 600 }}
               >
                 Save
               </button>
-              <button onClick={onEditCancel} style={{ padding: '10px 14px', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 8, color: '#9ca3af', fontSize: 13, cursor: 'pointer' }}>
+              <button onClick={onEditCancel} style={{ padding: '10px 14px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text2)', fontSize: 13, cursor: 'pointer' }}>
                 Cancel
               </button>
             </div>
@@ -966,47 +772,16 @@ function ContactDetail({ data, loading, onCall, onMessage, isEditing, onEditOpen
         )}
       </div>
 
-      {/* Order history */}
+      {/* Conversation summary — profile data beyond messages lives in GoHighLevel */}
       <div style={{ padding: '16px 24px' }}>
-        <div style={{ fontSize: 11, color: '#9ca3af', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 12 }}>
-          Order History
+        <div style={{ fontSize: 11, color: 'var(--text2)', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 12 }}>
+          Conversation
         </div>
-        {!orders || orders.length === 0 ? (
-          <div style={{ padding: '16px', background: '#1a1a1a', borderRadius: 8, fontSize: 13, color: '#9ca3af', textAlign: 'center' }}>
-            No orders yet
-          </div>
-        ) : (
-          orders.map((order, i) => (
-            <div key={order.woo_order_id || order.id || i} style={{ background: '#1a1a1a', borderRadius: 8, padding: '12px 14px', marginBottom: 8 }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>
-                  Order #{order.woo_order_id}
-                </div>
-                <span style={{
-                  fontSize: 11, padding: '2px 8px', borderRadius: 4,
-                  background: `${statusColour[order.status] || '#9ca3af'}22`,
-                  color: statusColour[order.status] || '#9ca3af',
-                  textTransform: 'capitalize'
-                }}>
-                  {order.status}
-                </span>
-              </div>
-              <div style={{ fontSize: 13, color: '#9ca3af', marginBottom: 4 }}>
-                ${parseFloat(order.total || 0).toFixed(2)} · {formatDate(order.created_at)}
-              </div>
-              {Array.isArray(order.items) && order.items.length > 0 && (
-                <div style={{ fontSize: 12, color: '#6b7280' }}>
-                  {order.items.map(it => `${it.quantity}x ${it.name}`).join(', ')}
-                </div>
-              )}
-              {order.tracking_number && (
-                <div style={{ fontSize: 12, color: '#3b82f6', marginTop: 4 }}>
-                  Tracking: {order.tracking_number} {order.carrier ? `(${order.carrier.toUpperCase()})` : ''}
-                </div>
-              )}
-            </div>
-          ))
-        )}
+        <div style={{ padding: '16px', background: 'var(--surface2)', borderRadius: 8, fontSize: 13, color: 'var(--text2)', textAlign: 'center' }}>
+          {totalMessages > 0
+            ? `${totalMessages} message${totalMessages === 1 ? '' : 's'} on record — open the thread to read them`
+            : 'No messages yet'}
+        </div>
       </div>
     </div>
   );
@@ -1016,22 +791,22 @@ function ContactDetail({ data, loading, onCall, onMessage, isEditing, onEditOpen
 
 function CreateContactModal({ data, onChange, onSubmit, onCancel, error }) {
   const modalInput = {
-    width: '100%', background: '#111', border: '1px solid #2a2a2a',
-    borderRadius: 6, padding: '9px 12px', color: '#fff',
+    width: '100%', background: 'var(--surface2)', border: '1px solid var(--border)',
+    borderRadius: 6, padding: '9px 12px', color: 'var(--text)',
     fontSize: 13, outline: 'none', boxSizing: 'border-box'
   };
 
   return (
     <div style={{
-      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)',
+      position: 'fixed', inset: 0, background: 'rgba(10,29,46,0.55)',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       zIndex: 2000
     }}>
       <div style={{
-        background: '#1a1a1a', border: '1px solid #2a2a2a',
+        background: 'var(--surface)', border: '1px solid var(--border)',
         borderRadius: 12, padding: 28, width: '90%', maxWidth: 400
       }}>
-        <div style={{ fontSize: 16, fontWeight: 600, color: '#fff', marginBottom: 20 }}>
+        <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text)', marginBottom: 20 }}>
           New Contact
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -1042,12 +817,12 @@ function CreateContactModal({ data, onChange, onSubmit, onCancel, error }) {
           <input value={data.phone} onChange={e => onChange(p => ({ ...p, phone: e.target.value }))} placeholder="Phone (e.g. 3055551234) *" style={modalInput} />
           <input value={data.email} onChange={e => onChange(p => ({ ...p, email: e.target.value }))} placeholder="Email (optional)" style={modalInput} />
           <textarea value={data.notes} onChange={e => onChange(p => ({ ...p, notes: e.target.value }))} placeholder="Notes (optional)" rows={3} style={{ ...modalInput, resize: 'vertical' }} />
-          {error && <div style={{ fontSize: 13, color: '#ef4444' }}>{error}</div>}
+          {error && <div style={{ fontSize: 13, color: 'var(--red)' }}>{error}</div>}
           <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
-            <button onClick={onSubmit} style={{ flex: 1, padding: '12px', background: '#16a34a', border: 'none', borderRadius: 8, color: '#fff', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+            <button onClick={onSubmit} style={{ flex: 1, padding: '12px', background: 'var(--navy-fill)', border: 'none', borderRadius: 8, color: '#fff', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
               Create Contact
             </button>
-            <button onClick={onCancel} style={{ padding: '12px 16px', background: 'none', border: '1px solid #2a2a2a', borderRadius: 8, color: '#9ca3af', fontSize: 14, cursor: 'pointer' }}>
+            <button onClick={onCancel} style={{ padding: '12px 16px', background: 'none', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text2)', fontSize: 14, cursor: 'pointer' }}>
               Cancel
             </button>
           </div>
@@ -1080,8 +855,7 @@ function MessagesView({
   const endPress = () => clearTimeout(pressTimer.current);
 
   // Sort: contacts with messages first (newest message → oldest),
-  // then contacts with orders but no messages (newest order → oldest),
-  // then contacts with no messages and no orders at the bottom
+  // then contacts with no messages sorted by last_seen
   const sorted = [...conversations].sort((a, b) => {
     const aMsg = a.lastMessage?.created_at;
     const bMsg = b.lastMessage?.created_at;
@@ -1089,14 +863,8 @@ function MessagesView({
     if (aMsg && !bMsg) return -1;
     if (!aMsg && bMsg) return 1;
     // Both have no messages — sort by most recent activity
-    const aKey = Math.max(
-      a.last_seen ? new Date(a.last_seen).getTime() : 0,
-      a.latest_order_date ? new Date(a.latest_order_date).getTime() : 0
-    );
-    const bKey = Math.max(
-      b.last_seen ? new Date(b.last_seen).getTime() : 0,
-      b.latest_order_date ? new Date(b.latest_order_date).getTime() : 0
-    );
+    const aKey = a.last_seen ? new Date(a.last_seen).getTime() : 0;
+    const bKey = b.last_seen ? new Date(b.last_seen).getTime() : 0;
     return bKey - aKey;
   });
 
@@ -1130,7 +898,7 @@ function MessagesView({
         <div className="conv-list">
           {filtered.length === 0 && (
             <div className="conv-empty">
-              {search ? `// no results` : `// no conversations`}
+              {search ? 'No results' : 'No conversations yet'}
             </div>
           )}
           {filtered.map((c, idx) => {
@@ -1149,7 +917,7 @@ function MessagesView({
                     borderBottom: '1px solid var(--border)',
                     background: 'var(--bg)'
                   }}>
-                    // NO MESSAGES YET
+                    NO MESSAGES YET
                   </div>
                 )}
                 <ConvRow
@@ -1187,14 +955,14 @@ function MessagesView({
                   disabled={callState.status !== 'idle' || !voiceReady}
                   style={{
                     background: 'none',
-                    border: `1px solid ${callState.status !== 'idle' || !voiceReady ? '#2a2a2a' : '#16a34a'}`,
+                    border: `1px solid ${callState.status !== 'idle' || !voiceReady ? 'var(--border)' : 'var(--sea-green)'}`,
                     borderRadius: 6, padding: '6px 12px',
-                    color: callState.status !== 'idle' || !voiceReady ? '#9ca3af' : '#16a34a',
+                    color: callState.status !== 'idle' || !voiceReady ? 'var(--text2)' : 'var(--sea-green)',
                     cursor: callState.status !== 'idle' || !voiceReady ? 'default' : 'pointer',
                     fontSize: 13, display: 'flex', alignItems: 'center', gap: 6,
                     marginLeft: 8, flexShrink: 0
                   }}
-                  title="Call this customer"
+                  title="Call this contact"
                 >
                   📞 Call
                 </button>
@@ -1203,8 +971,8 @@ function MessagesView({
 
             <div className="messages-area">
               {visibleMessages.length === 0 ? (
-                <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: '0.8125rem' }}>
-                  // no messages yet
+                <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text3)', fontSize: '0.8125rem' }}>
+                  No messages yet
                 </div>
               ) : (
                 visibleMessages.map((m, idx) => {
@@ -1332,7 +1100,7 @@ function MessagesView({
                 />
                 <button className="send-btn" onClick={onSend} disabled={!canSend}>
                   {sending
-                    ? <span className="spinner" style={{ width: '14px', height: '14px', borderTopColor: '#030712' }} />
+                    ? <span className="spinner" style={{ width: '14px', height: '14px', borderTopColor: '#fff' }} />
                     : '↑'}
                 </button>
               </div>
@@ -1423,20 +1191,18 @@ function ConvRow({ contact: c, active, onClick }) {
   const preview = c.lastMessage
     ? (c.lastMessage.direction === 'outbound' ? '↗ ' : '') + (messagePreviewText(c.lastMessage, 40) || truncate(c.lastMessage.body, 40))
     : 'No messages yet';
-  const orderStatus = c.latest_order_status || 'none';
-  const timestamp = smartTime(c.lastMessage?.created_at || c.latest_order_date || c.last_seen);
+  const timestamp = smartTime(c.lastMessage?.created_at || c.last_seen);
   const isUnread = (c.unread_count || 0) > 0;
 
   return (
     <div className={`conv-row${active ? ' active' : ''}`} onClick={onClick}>
       <div className="conv-avatar" style={{ position: 'relative' }}>
         {getInitials(c)}
-        <span className={`order-dot ${orderStatus}`} />
         {isUnread && (
           <span style={{
             position: 'absolute', top: -2, right: -2,
             width: 10, height: 10, borderRadius: '50%',
-            background: '#3b82f6', border: '2px solid var(--bg)',
+            background: 'var(--rescue-orange)', border: '2px solid var(--surface)',
             display: 'block'
           }} />
         )}
@@ -1455,495 +1221,6 @@ function ConvRow({ contact: c, active, onClick }) {
   );
 }
 
-// ─── Activity Tab Components ──────────────────────────────────────────────────
-
-function flowBadgeStyle(flowType) {
-  if (!flowType) return { bg: 'var(--surface2)', color: 'var(--text3)' };
-  if (flowType.startsWith('failed'))    return { bg: 'rgba(248,113,113,0.12)', color: 'var(--red)' };
-  if (flowType.startsWith('hold'))      return { bg: 'rgba(251,191,36,0.12)',   color: 'var(--yellow)' };
-  if (flowType.startsWith('confirmed')) return { bg: 'rgba(0,245,160,0.08)',    color: 'var(--accent)' };
-  if (flowType.startsWith('shipped') || flowType.startsWith('delivered'))
-    return { bg: 'rgba(0,245,160,0.12)', color: 'var(--accent)' };
-  return { bg: 'var(--surface2)', color: 'var(--text3)' };
-}
-
-function FlowBadge({ flowType }) {
-  const { bg, color } = flowBadgeStyle(flowType);
-  return (
-    <span style={{
-      background: bg, color, fontSize: '0.625rem', fontFamily: 'var(--mono)',
-      padding: '2px 6px', borderRadius: 3, whiteSpace: 'nowrap', letterSpacing: '0.03em'
-    }}>
-      {flowType || 'unknown'}
-    </span>
-  );
-}
-
-function useCountdown(sendAt) {
-  const [remaining, setRemaining] = useState('');
-  useEffect(() => {
-    const tick = () => {
-      const diff = new Date(sendAt) - new Date();
-      if (diff <= 0) { setRemaining('firing...'); return; }
-      const h = Math.floor(diff / 3600000);
-      const m = Math.floor((diff % 3600000) / 60000);
-      const s = Math.floor((diff % 60000) / 1000);
-      if (h > 0) setRemaining(`${h}h ${m}m`);
-      else if (m > 0) setRemaining(`${m}m ${s}s`);
-      else setRemaining(`${s}s`);
-    };
-    tick();
-    const interval = setInterval(tick, 1000);
-    return () => clearInterval(interval);
-  }, [sendAt]);
-  return remaining;
-}
-
-function QueueRow({ item, onCancel }) {
-  const countdown = useCountdown(item.send_at);
-  const displayName = item.contact_name || ('...' + (item.phone?.slice(-4) || ''));
-  const preview = item.message_body
-    ? (item.message_body.length > 70 ? item.message_body.slice(0, 70) + '...' : item.message_body)
-    : '';
-
-  return (
-    <div style={{
-      display: 'flex', alignItems: 'flex-start', gap: '0.625rem',
-      padding: '0.75rem 1rem', borderBottom: '1px solid var(--border)',
-      minHeight: 56
-    }}>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', marginBottom: '0.25rem', flexWrap: 'wrap' }}>
-          <span style={{ color: 'var(--text)', fontSize: '0.8125rem', fontWeight: 600 }}>{displayName}</span>
-          <FlowBadge flowType={item.flow_type} />
-          {item.order_id && (
-            <span style={{ color: 'var(--text3)', fontSize: '0.65rem', fontFamily: 'var(--mono)' }}>#{item.order_id}</span>
-          )}
-        </div>
-        <div style={{ color: 'var(--text3)', fontSize: '0.7rem', fontFamily: 'var(--mono)', lineHeight: 1.4 }}>{preview}</div>
-      </div>
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.375rem', flexShrink: 0, paddingTop: 2 }}>
-        <span style={{ color: 'var(--yellow)', fontSize: '0.7rem', fontFamily: 'var(--mono)', whiteSpace: 'nowrap' }}>{countdown}</span>
-        <button
-          onClick={() => onCancel(item)}
-          style={{
-            background: 'transparent', border: '1px solid rgba(248,113,113,0.4)', color: 'var(--red)',
-            padding: '3px 9px', borderRadius: 5, fontSize: '0.65rem', cursor: 'pointer',
-            fontFamily: 'var(--mono)', whiteSpace: 'nowrap'
-          }}
-        >
-          cancel
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function CancelModal({ target, onConfirm, onDismiss, cancelling }) {
-  if (!target) return null;
-  const displayName = target.contact_name || ('...' + (target.phone?.slice(-4) || ''));
-  return (
-    <div style={{
-      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', zIndex: 1000,
-      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem'
-    }} onClick={(e) => { if (e.target === e.currentTarget) onDismiss(); }}>
-      <div style={{
-        background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8,
-        padding: '1.5rem', maxWidth: 480, width: '100%', maxHeight: '90vh', overflowY: 'auto'
-      }}>
-        <div style={{ color: 'var(--text)', fontSize: '1rem', fontWeight: 600, marginBottom: '1rem' }}>
-          Cancel this message?
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
-          <span style={{ color: 'var(--text)', fontWeight: 500 }}>{displayName}</span>
-          <FlowBadge flowType={target.flow_type} />
-          {target.order_id && <span style={{ color: 'var(--text2)', fontSize: '0.75rem', fontFamily: 'var(--mono)' }}>#{target.order_id}</span>}
-        </div>
-        <div style={{
-          background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 6,
-          padding: '0.75rem', fontSize: '0.75rem', color: 'var(--text2)',
-          fontFamily: 'var(--mono)', whiteSpace: 'pre-wrap', marginBottom: '0.75rem', lineHeight: 1.6
-        }}>
-          {target.message_body}
-        </div>
-        <div style={{ color: 'var(--text2)', fontSize: '0.75rem', marginBottom: '1.25rem' }}>
-          Would send: {target.send_at ? new Date(target.send_at).toLocaleString('en-US', { timeZone: TZ }) : ''}
-        </div>
-        <div style={{ display: 'flex', gap: '0.75rem' }}>
-          <button
-            onClick={onConfirm}
-            disabled={cancelling}
-            style={{
-              flex: 1, background: '#ef4444', color: '#fff', border: 'none',
-              padding: '0.625rem', borderRadius: 6, fontSize: '0.875rem', cursor: 'pointer', fontWeight: 500
-            }}
-          >
-            {cancelling ? <span className="spinner" style={{ borderTopColor: '#fff' }} /> : 'Yes, cancel it'}
-          </button>
-          <button
-            onClick={onDismiss}
-            style={{
-              flex: 1, background: 'var(--border)', color: 'var(--text2)', border: 'none',
-              padding: '0.625rem', borderRadius: 6, fontSize: '0.875rem', cursor: 'pointer'
-            }}
-          >
-            Keep it
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function RecentRow({ item }) {
-  const [expanded, setExpanded] = useState(false);
-  const displayName = item.contact_name || ('...' + (item.phone?.slice(-4) || ''));
-
-  return (
-    <div style={{ borderBottom: '1px solid var(--border)' }}>
-      <div
-        style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.625rem 1rem', cursor: 'pointer' }}
-        onClick={() => setExpanded(e => !e)}
-      >
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-            <span style={{ color: 'var(--text)', fontSize: '0.8125rem', fontWeight: 500 }}>{displayName}</span>
-            <FlowBadge flowType={item.flow_type} />
-            {item.order_id && (
-              <span style={{ color: 'var(--text2)', fontSize: '0.7rem', fontFamily: 'var(--mono)' }}>#{item.order_id}</span>
-            )}
-          </div>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
-          <span style={{ color: 'var(--text2)', fontSize: '0.7rem', fontFamily: 'var(--mono)' }}>{relativeTime(item.sent_at)}</span>
-          <span style={{ color: 'var(--text2)', fontSize: '0.75rem' }}>{expanded ? '▲' : '▼'}</span>
-        </div>
-      </div>
-      {expanded && (
-        <div style={{ padding: '0 1rem 0.75rem', borderTop: '1px solid var(--border)' }}>
-          <div style={{
-            background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 6,
-            padding: '0.625rem', fontSize: '0.75rem', color: 'var(--text2)',
-            fontFamily: 'var(--mono)', whiteSpace: 'pre-wrap', lineHeight: 1.6, marginBottom: '0.375rem'
-          }}>
-            {item.message_body}
-          </div>
-          {item.telnyx_message_id && (
-            <div style={{ color: 'var(--text2)', fontSize: '0.65rem', fontFamily: 'var(--mono)' }}>
-              ID: {item.telnyx_message_id}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function LiveFeed({ events }) {
-  return (
-    <div>
-      {events.length === 0 ? (
-        <div style={{ padding: '1.25rem', color: 'var(--text2)', fontSize: '0.75rem', fontFamily: 'var(--mono)', textAlign: 'center' }}>
-          // waiting for events
-        </div>
-      ) : events.map((ev, i) => {
-        const dotColor = ev.type === 'message_sent'    ? 'var(--accent)'
-          : ev.type === 'queue_cancelled' ? 'var(--red)'
-          : ev.type === 'new_message'     ? 'var(--blue)'
-          : 'var(--yellow)';
-        const name = ev.contact_name || (ev.phone ? '...' + ev.phone.slice(-4) : '');
-        const label = ev.type === 'queue_added'     ? `queued ${ev.flow_type || ''} for ${name}`
-          : ev.type === 'message_sent'   ? `sent ${ev.flow_type || ''} to ${name}`
-          : ev.type === 'queue_cancelled' ? `cancelled ${ev.flow_type || ''} for ${name}`
-          : ev.type === 'new_message'    ? `inbound SMS from ${name}`
-          : ev.type;
-        return (
-          <div key={i} style={{
-            display: 'flex', alignItems: 'center', gap: '0.5rem',
-            padding: '0.5rem 1rem', borderBottom: '1px solid var(--border)',
-            borderLeft: `3px solid ${dotColor}`
-          }}>
-            <span style={{ color: 'var(--text)', fontSize: '0.75rem', fontFamily: 'var(--mono)', flex: 1 }}>{label}</span>
-            <span style={{ color: 'var(--text2)', fontSize: '0.65rem', fontFamily: 'var(--mono)', flexShrink: 0 }}>
-              {relativeTime(ev.ts)}
-            </span>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function StatCard({ label, value, color }) {
-  return (
-    <div style={{
-      background: 'var(--surface)', border: '1px solid var(--border)',
-      borderRadius: 10, padding: '0.75rem 0.5rem', textAlign: 'center'
-    }}>
-      <div style={{ fontSize: '1.5rem', fontWeight: 700, color, fontFamily: 'var(--mono)', lineHeight: 1 }}>{value}</div>
-      <div style={{ fontSize: '0.6rem', color: 'var(--text3)', marginTop: '0.3rem', letterSpacing: '0.06em', textTransform: 'uppercase' }}>{label}</div>
-    </div>
-  );
-}
-
-const FLOW_FILTERS = [
-  { value: 'all',                label: 'All' },
-  { value: 'failed-msg1',        label: 'Failed 1' },
-  { value: 'failed-msg2',        label: 'Failed 2' },
-  { value: 'failed-msg3',        label: 'Failed 3' },
-  { value: 'hold-msg1',          label: 'Hold 1' },
-  { value: 'hold-msg2',          label: 'Hold 2' },
-  { value: 'hold-msg3',          label: 'Hold 3' },
-  { value: 'hold-failed-nudge',  label: 'Nudge' },
-  { value: 'confirmed-new',      label: 'New' },
-  { value: 'confirmed-returning',label: 'Return' },
-  { value: 'shipped-msg1',       label: 'Shipped' },
-  { value: 'delivered-msg1',     label: 'Delivered' },
-];
-
-function ActivityTab({ sseStatus }) {
-  const [stats, setStats]           = useState({ pending: 0, sentToday: 0, failedToday: 0, cancelledToday: 0 });
-  const [queue, setQueue]           = useState([]);
-  const [recent, setRecent]         = useState([]);
-  const [flowFilter, setFlowFilter] = useState('all');
-  const [cancelTarget, setCancelTarget] = useState(null);
-  const [cancelling, setCancelling] = useState(false);
-  const [loading, setLoading]       = useState(true);
-  const [liveEvents, setLiveEvents] = useState([]);
-  const [queuePage, setQueuePage]   = useState(1);
-  const [queueHasMore, setQueueHasMore] = useState(false);
-  const [recentPage, setRecentPage] = useState(1);
-  const [recentHasMore, setRecentHasMore] = useState(false);
-  const isMobile = useIsMobile();
-
-  const currentFilter = useRef(flowFilter);
-  currentFilter.current = flowFilter;
-
-  async function loadAll(filter, qPage, rPage) {
-    const f  = filter ?? flowFilter;
-    const qp = qPage  ?? 1;
-    const rp = rPage  ?? 1;
-    try {
-      const [s, q, r] = await Promise.all([
-        api('GET', '/api/activity/stats'),
-        api('GET', `/api/activity/queue?flow=${f}&page=${qp}`),
-        api('GET', `/api/activity/recent?flow=${f}&page=${rp}`),
-      ]);
-      setStats(s);
-      if (qp === 1) setQueue(q.items || []);
-      else setQueue(prev => [...prev, ...(q.items || [])]);
-      setQueueHasMore(q.hasMore || false);
-      if (rp === 1) setRecent(r.items || []);
-      else setRecent(prev => [...prev, ...(r.items || [])]);
-      setRecentHasMore(r.hasMore || false);
-    } catch (err) {
-      console.error('[Activity] load error:', err.message);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    setLoading(true);
-    setQueuePage(1);
-    setRecentPage(1);
-    loadAll(flowFilter, 1, 1);
-  }, [flowFilter]);
-
-  useEffect(() => {
-    function handleSSE(e) {
-      const event = { ...e.detail, ts: new Date().toISOString() };
-      const activityTypes = ['queue_added', 'queue_cancelled', 'message_sent', 'new_message'];
-      if (activityTypes.includes(event.type)) {
-        setLiveEvents(prev => [event, ...prev].slice(0, 20));
-      }
-      switch (event.type) {
-        case 'queue_added':
-          setQueue(prev => {
-            if (prev.some(m => m.id === event.id)) return prev;
-            const newItem = { id: event.id, order_id: event.order_id, phone: event.phone, flow_type: event.flow_type, send_at: event.send_at, message_body: '', contact_name: null };
-            return [...prev, newItem].sort((a, b) => new Date(a.send_at) - new Date(b.send_at));
-          });
-          setStats(prev => ({ ...prev, pending: prev.pending + 1 }));
-          break;
-        case 'queue_cancelled':
-          setQueue(prev => prev.filter(m => m.id !== event.id));
-          setStats(prev => ({ ...prev, pending: Math.max(0, prev.pending - 1), cancelledToday: prev.cancelledToday + 1 }));
-          break;
-        case 'message_sent':
-          setQueue(prev => prev.filter(m => m.id !== event.id));
-          setStats(prev => ({ ...prev, pending: Math.max(0, prev.pending - 1), sentToday: prev.sentToday + 1 }));
-          api('GET', `/api/activity/recent?flow=${currentFilter.current}&page=1`).then(r => setRecent(r.items || [])).catch(() => {});
-          break;
-        case 'stats_update':
-          api('GET', '/api/activity/stats').then(setStats).catch(() => {});
-          break;
-      }
-    }
-    window.addEventListener('vici-sse', handleSSE);
-    return () => window.removeEventListener('vici-sse', handleSSE);
-  }, []);
-
-  async function handleCancelConfirm() {
-    if (!cancelTarget || cancelling) return;
-    setCancelling(true);
-    try {
-      await api('DELETE', `/api/activity/queue/${cancelTarget.id}`);
-      setQueue(prev => prev.filter(m => m.id !== cancelTarget.id));
-      setStats(prev => ({ ...prev, pending: Math.max(0, prev.pending - 1), cancelledToday: prev.cancelledToday + 1 }));
-    } catch (err) {
-      console.error('[Activity] cancel error:', err.message);
-    } finally {
-      setCancelling(false);
-      setCancelTarget(null);
-    }
-  }
-
-  const sectionStyle = {
-    background: 'var(--surface)', border: '1px solid var(--border)',
-    borderRadius: 10, overflow: 'hidden'
-  };
-  const sectionHdr = {
-    padding: '0.625rem 1rem', borderBottom: '1px solid var(--border)',
-    fontSize: '0.65rem', fontFamily: 'var(--mono)', color: 'var(--text3)',
-    letterSpacing: '0.1em', textTransform: 'uppercase',
-    display: 'flex', justifyContent: 'space-between', alignItems: 'center'
-  };
-  const loadMoreBtn = {
-    background: 'none', border: '1px solid var(--border)', color: 'var(--text3)',
-    padding: '5px 16px', borderRadius: 5, cursor: 'pointer',
-    fontSize: '0.7rem', fontFamily: 'var(--mono)'
-  };
-
-  return (
-    // Outer shell — fills .main-content, clips to viewport bounds
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
-
-      {/* Scrollable content — the only scrolling layer */}
-      <div style={{
-        flex: 1, overflowY: 'auto', overflowX: 'hidden',
-        WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain'
-      }}>
-        <div style={{
-          padding: isMobile ? '0.75rem' : '1.25rem 1.5rem',
-          maxWidth: 900, margin: '0 auto',
-          display: 'flex', flexDirection: 'column', gap: '0.875rem',
-          paddingBottom: isMobile ? '1.5rem' : '2rem'
-        }}>
-
-          {/* Stats — always 2×2 on mobile, 4-across on desktop */}
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, 1fr)',
-            gap: '0.5rem'
-          }}>
-            <StatCard label="Pending"         value={stats.pending}        color="var(--yellow)" />
-            <StatCard label="Sent today"       value={stats.sentToday}      color="var(--accent)" />
-            <StatCard label="Failed today"     value={stats.failedToday}    color="var(--red)" />
-            <StatCard label="Cancelled today"  value={stats.cancelledToday} color="var(--text2)" />
-          </div>
-
-          {/* Flow filter pills */}
-          <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', paddingBottom: '4px', marginBottom: '-4px' }}>
-            <div style={{ display: 'flex', gap: '0.375rem', minWidth: 'max-content', paddingBottom: '2px' }}>
-              {FLOW_FILTERS.map(f => (
-                <button
-                  key={f.value}
-                  onClick={() => setFlowFilter(f.value)}
-                  style={{
-                    padding: '5px 11px', borderRadius: 20, cursor: 'pointer',
-                    fontSize: '0.675rem', fontFamily: 'var(--mono)', whiteSpace: 'nowrap',
-                    fontWeight: 600, letterSpacing: '0.03em',
-                    border: flowFilter === f.value ? '1px solid var(--accent)' : '1px solid var(--border)',
-                    background: flowFilter === f.value ? 'var(--accent-dim)' : 'transparent',
-                    color:      flowFilter === f.value ? 'var(--accent)'      : 'var(--text3)',
-                  }}
-                >
-                  {f.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Queue */}
-          <div style={sectionStyle}>
-            <div style={sectionHdr}>
-              <span>// queue ({queue.length}{queueHasMore ? '+' : ''})</span>
-              <span style={{
-                color: sseStatus === 'connected' ? 'var(--accent)' : 'var(--yellow)',
-                fontSize: '0.6rem', fontFamily: 'var(--mono)'
-              }}>
-                {sseStatus === 'connected' ? '● live' : '○ ' + sseStatus}
-              </span>
-            </div>
-            {loading ? (
-              <div style={{ padding: '2rem', textAlign: 'center' }}><span className="spinner" /></div>
-            ) : queue.length === 0 ? (
-              <div style={{ padding: '1.5rem', color: 'var(--text3)', fontSize: '0.75rem', fontFamily: 'var(--mono)', textAlign: 'center' }}>
-                // queue is empty
-              </div>
-            ) : (
-              <>
-                {queue.map(item => <QueueRow key={item.id} item={item} onCancel={setCancelTarget} />)}
-                {queueHasMore && (
-                  <div style={{ padding: '0.625rem', textAlign: 'center' }}>
-                    <button style={loadMoreBtn} onClick={() => { const n = queuePage + 1; setQueuePage(n); loadAll(flowFilter, n, recentPage); }}>
-                      load more
-                    </button>
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-
-          {/* Recent sends */}
-          <div style={sectionStyle}>
-            <div style={sectionHdr}><span>// recent sends</span></div>
-            {loading ? (
-              <div style={{ padding: '2rem', textAlign: 'center' }}><span className="spinner" /></div>
-            ) : recent.length === 0 ? (
-              <div style={{ padding: '1.5rem', color: 'var(--text3)', fontSize: '0.75rem', fontFamily: 'var(--mono)', textAlign: 'center' }}>
-                // no messages sent yet
-              </div>
-            ) : (
-              <>
-                {recent.map(item => <RecentRow key={item.id} item={item} />)}
-                {recentHasMore && (
-                  <div style={{ padding: '0.625rem', textAlign: 'center' }}>
-                    <button style={loadMoreBtn} onClick={() => { const n = recentPage + 1; setRecentPage(n); loadAll(flowFilter, queuePage, n); }}>
-                      load more
-                    </button>
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-
-          {/* Live feed */}
-          <div style={sectionStyle}>
-            <div style={sectionHdr}>
-              <span>// live feed</span>
-              <span style={{ color: 'var(--text3)', fontSize: '0.6rem', fontFamily: 'var(--mono)' }}>
-                {liveEvents.length} events
-              </span>
-            </div>
-            <LiveFeed events={liveEvents} />
-          </div>
-
-        </div>
-      </div>
-
-      {/* Cancel modal renders outside the scroll area so it always covers full screen */}
-      <CancelModal
-        target={cancelTarget}
-        onConfirm={handleCancelConfirm}
-        onDismiss={() => setCancelTarget(null)}
-        cancelling={cancelling}
-      />
-    </div>
-  );
-}
-
 // ─── Voice Components ─────────────────────────────────────────────────────────
 
 function CallConfirmModal({ target, onConfirm, onCancel }) {
@@ -1954,27 +1231,27 @@ function CallConfirmModal({ target, onConfirm, onCancel }) {
       display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000
     }}>
       <div style={{
-        background: '#1a1a1a', border: '1px solid #2a2a2a',
+        background: 'var(--surface)', border: '1px solid var(--border)',
         borderRadius: 12, padding: 28, minWidth: 280, textAlign: 'center'
       }}>
-        <div style={{ fontSize: 12, color: '#9ca3af', marginBottom: 8, letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+        <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 8, letterSpacing: '0.1em', textTransform: 'uppercase' }}>
           Calling
         </div>
-        <div style={{ fontSize: 20, fontWeight: 600, color: '#fff', marginBottom: 4 }}>
+        <div style={{ fontSize: 20, fontWeight: 600, color: 'var(--text)', marginBottom: 4 }}>
           {target.name !== target.phone ? target.name : target.phone}
         </div>
         {target.name !== target.phone && (
-          <div style={{ fontSize: 14, color: '#9ca3af', marginBottom: 24 }}>{target.phone}</div>
+          <div style={{ fontSize: 14, color: 'var(--text2)', marginBottom: 24 }}>{target.phone}</div>
         )}
         {target.name === target.phone && <div style={{ marginBottom: 24 }} />}
         <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
           <button onClick={onConfirm} style={{
-            background: '#16a34a', border: 'none', borderRadius: 8,
+            background: 'var(--sea-green)', border: 'none', borderRadius: 8,
             padding: '12px 24px', color: '#fff', fontSize: 14, fontWeight: 600, cursor: 'pointer'
           }}>Call</button>
           <button onClick={onCancel} style={{
-            background: 'none', border: '1px solid #2a2a2a', borderRadius: 8,
-            padding: '12px 24px', color: '#9ca3af', fontSize: 14, cursor: 'pointer'
+            background: 'none', border: '1px solid var(--border)', borderRadius: 8,
+            padding: '12px 24px', color: 'var(--text2)', fontSize: 14, cursor: 'pointer'
           }}>Cancel</button>
         </div>
       </div>
@@ -1992,53 +1269,53 @@ function ActiveCallPanel({ callState, onAnswer, onHangup, onMute, onRecord, onSp
   return (
     <div style={{
       position: 'fixed', bottom: 80, left: '50%', transform: 'translateX(-50%)',
-      background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 16,
+      background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16,
       padding: '20px 28px', minWidth: 290, zIndex: 1500,
-      boxShadow: '0 8px 32px rgba(0,0,0,0.6)', textAlign: 'center'
+      boxShadow: '0 8px 32px rgba(10,29,46,0.35)', textAlign: 'center'
     }}>
-      <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 6, letterSpacing: '0.12em', textTransform: 'uppercase' }}>
+      <div style={{ fontSize: 11, color: 'var(--text2)', marginBottom: 6, letterSpacing: '0.12em', textTransform: 'uppercase' }}>
         {isRinging && isInbound ? 'Incoming call'
           : isRinging && !isInbound ? 'Calling...'
           : isActive ? 'On call'
           : 'Call ended'}
       </div>
-      <div style={{ fontSize: 18, fontWeight: 600, color: '#fff', marginBottom: 2 }}>
+      <div style={{ fontSize: 18, fontWeight: 600, color: 'var(--text)', marginBottom: 2 }}>
         {callState.contactName || callState.contactPhone}
       </div>
       {callState.contactName && (
-        <div style={{ fontSize: 13, color: '#9ca3af', marginBottom: 12 }}>{callState.contactPhone}</div>
+        <div style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 12 }}>{callState.contactPhone}</div>
       )}
       {isActive && (
-        <div style={{ fontSize: 22, fontWeight: 700, color: '#16a34a', marginBottom: 16 }}>
+        <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--sea-green)', marginBottom: 16 }}>
           {formatDuration(callState.duration)}
         </div>
       )}
       <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
         {isRinging && isInbound && (
           <>
-            <button onClick={onAnswer} style={{ background: '#16a34a', border: 'none', borderRadius: '50%', width: 56, height: 56, color: '#fff', fontSize: 22, cursor: 'pointer', animation: 'callPulse 1.2s infinite' }}>📞</button>
-            <button onClick={onHangup} style={{ background: '#ef4444', border: 'none', borderRadius: '50%', width: 56, height: 56, color: '#fff', fontSize: 22, cursor: 'pointer' }}>📵</button>
+            <button onClick={onAnswer} style={{ background: 'var(--sea-green)', border: 'none', borderRadius: '50%', width: 56, height: 56, color: '#fff', fontSize: 22, cursor: 'pointer', animation: 'callPulse 1.2s infinite' }}>📞</button>
+            <button onClick={onHangup} style={{ background: 'var(--rescue-orange)', border: 'none', borderRadius: '50%', width: 56, height: 56, color: '#fff', fontSize: 22, cursor: 'pointer' }}>📵</button>
           </>
         )}
         {isActive && (
           <>
-            <button onClick={onMute} style={{ background: callState.isMuted ? '#ef4444' : '#2a2a2a', border: 'none', borderRadius: '50%', width: 48, height: 48, color: '#fff', fontSize: 18, cursor: 'pointer' }} title={callState.isMuted ? 'Unmute' : 'Mute'}>
+            <button onClick={onMute} style={{ background: callState.isMuted ? 'var(--rescue-orange)' : 'var(--surface3)', border: 'none', borderRadius: '50%', width: 48, height: 48, color: callState.isMuted ? '#fff' : 'var(--text)', fontSize: 18, cursor: 'pointer' }} title={callState.isMuted ? 'Unmute' : 'Mute'}>
               {callState.isMuted ? '🔇' : '🎤'}
             </button>
-            <button onClick={onSpeaker} style={{ background: isSpeaker ? '#2563eb' : '#2a2a2a', border: 'none', borderRadius: '50%', width: 48, height: 48, color: '#fff', fontSize: 18, cursor: 'pointer' }} title={isSpeaker ? 'Speaker on' : 'Speaker off'}>
+            <button onClick={onSpeaker} style={{ background: isSpeaker ? 'var(--navy-fill)' : 'var(--surface3)', border: 'none', borderRadius: '50%', width: 48, height: 48, color: isSpeaker ? '#fff' : 'var(--text)', fontSize: 18, cursor: 'pointer' }} title={isSpeaker ? 'Speaker on' : 'Speaker off'}>
               🔊
             </button>
-            <button onClick={onRecord} style={{ background: callState.isRecording ? '#ef4444' : '#2a2a2a', border: 'none', borderRadius: '50%', width: 48, height: 48, color: '#fff', fontSize: 18, cursor: 'pointer' }} title={callState.isRecording ? 'Stop recording' : 'Start recording'}>
+            <button onClick={onRecord} style={{ background: callState.isRecording ? 'var(--rescue-orange)' : 'var(--surface3)', border: 'none', borderRadius: '50%', width: 48, height: 48, color: callState.isRecording ? '#fff' : 'var(--text)', fontSize: 18, cursor: 'pointer' }} title={callState.isRecording ? 'Stop recording' : 'Start recording'}>
               {callState.isRecording ? '⏹' : '⏺'}
             </button>
-            <button onClick={onHangup} style={{ background: '#ef4444', border: 'none', borderRadius: '50%', width: 48, height: 48, color: '#fff', fontSize: 22, cursor: 'pointer' }}>📵</button>
+            <button onClick={onHangup} style={{ background: 'var(--rescue-orange)', border: 'none', borderRadius: '50%', width: 48, height: 48, color: '#fff', fontSize: 22, cursor: 'pointer' }}>📵</button>
           </>
         )}
         {isRinging && !isInbound && (
-          <button onClick={onHangup} style={{ background: '#ef4444', border: 'none', borderRadius: '50%', width: 56, height: 56, color: '#fff', fontSize: 22, cursor: 'pointer' }}>📵</button>
+          <button onClick={onHangup} style={{ background: 'var(--rescue-orange)', border: 'none', borderRadius: '50%', width: 56, height: 56, color: '#fff', fontSize: 22, cursor: 'pointer' }}>📵</button>
         )}
         {isEnded && (
-          <div style={{ color: '#9ca3af', fontSize: 14, padding: '8px 0' }}>Call ended</div>
+          <div style={{ color: 'var(--text2)', fontSize: 14, padding: '8px 0' }}>Call ended</div>
         )}
       </div>
     </div>
@@ -2049,36 +1326,36 @@ function DialerSection({ dialNumber, setDialNumber, onCall, voiceReady }) {
   const KEYPAD = [['1','2','3'],['4','5','6'],['7','8','9'],['*','0','#']];
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', padding: 24, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
-      <div style={{ fontSize: 28, fontWeight: 300, color: '#fff', minHeight: 44, marginBottom: 24, letterSpacing: '0.08em', textAlign: 'center' }}>
-        {dialNumber || <span style={{ color: '#9ca3af', fontSize: 16 }}>Enter a number</span>}
+      <div style={{ fontSize: 28, fontWeight: 300, color: 'var(--text)', minHeight: 44, marginBottom: 24, letterSpacing: '0.08em', textAlign: 'center' }}>
+        {dialNumber || <span style={{ color: 'var(--text2)', fontSize: 16 }}>Enter a number</span>}
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 72px)', gap: 12, marginBottom: 24 }}>
         {KEYPAD.flat().map(key => (
           <button key={key} onClick={() => setDialNumber(prev => prev + key)} style={{
             width: 72, height: 72, borderRadius: '50%',
-            background: '#1a1a1a', border: '1px solid #2a2a2a',
-            color: '#fff', fontSize: 20, cursor: 'pointer',
+            background: 'var(--surface2)', border: '1px solid var(--border)',
+            color: 'var(--text)', fontSize: 20, cursor: 'pointer',
             display: 'flex', alignItems: 'center', justifyContent: 'center'
           }}>{key}</button>
         ))}
       </div>
       <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
         <button onClick={() => setDialNumber(prev => prev.slice(0, -1))} disabled={!dialNumber}
-          style={{ width: 48, height: 48, borderRadius: '50%', background: 'none', border: 'none', color: '#9ca3af', fontSize: 20, cursor: 'pointer' }}>
+          style={{ width: 48, height: 48, borderRadius: '50%', background: 'none', border: 'none', color: 'var(--text2)', fontSize: 20, cursor: 'pointer' }}>
           ⌫
         </button>
         <button onClick={() => dialNumber && onCall(dialNumber, null)} disabled={!dialNumber || !voiceReady}
           style={{
             width: 72, height: 72, borderRadius: '50%',
-            background: (!dialNumber || !voiceReady) ? '#1a1a1a' : '#16a34a',
-            border: 'none', color: '#fff', fontSize: 28,
+            background: (!dialNumber || !voiceReady) ? 'var(--surface2)' : 'var(--sea-green)',
+            border: 'none', color: (!dialNumber || !voiceReady) ? 'var(--text3)' : '#fff', fontSize: 28,
             cursor: (!dialNumber || !voiceReady) ? 'default' : 'pointer',
             display: 'flex', alignItems: 'center', justifyContent: 'center'
           }}>
           📞
         </button>
         <button onClick={() => setDialNumber(prev => prev + '+')}
-          style={{ width: 48, height: 48, borderRadius: '50%', background: 'none', border: '1px solid #2a2a2a', color: '#9ca3af', fontSize: 18, cursor: 'pointer', fontWeight: 700 }}>
+          style={{ width: 48, height: 48, borderRadius: '50%', background: 'none', border: '1px solid var(--border)', color: 'var(--text2)', fontSize: 18, cursor: 'pointer', fontWeight: 700 }}>
           +
         </button>
       </div>
@@ -2090,29 +1367,29 @@ function CallLogRow({ log, icon, phone, isUnknown, knownName, durStr, onCall, on
   const [expanded, setExpanded] = useState(false);
 
   return (
-    <div style={{ borderBottom: '1px solid #1a1a1a' }}>
+    <div style={{ borderBottom: '1px solid var(--border)' }}>
       <div
         onClick={() => setExpanded(e => !e)}
         style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', cursor: 'pointer' }}
       >
-        <div style={{ width: 36, height: 36, borderRadius: '50%', background: '#1a1a1a', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, color: icon.color, flexShrink: 0 }}>
+        <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--surface2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, color: icon.color, flexShrink: 0 }}>
           {icon.icon}
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 14, color: isUnknown ? '#9ca3af' : '#fff', marginBottom: 2 }}>
+          <div style={{ fontSize: 14, color: isUnknown ? 'var(--text2)' : 'var(--text)', marginBottom: 2 }}>
             {knownName || phone}
           </div>
-          <div style={{ fontSize: 12, color: log.status === 'missed' ? '#ef4444' : '#6b7280', fontWeight: log.status === 'missed' ? 600 : 400 }}>
+          <div style={{ fontSize: 12, color: log.status === 'missed' ? 'var(--rescue-orange)' : 'var(--text3)', fontWeight: log.status === 'missed' ? 600 : 400 }}>
             {(!isUnknown && knownName) && <span style={{ marginRight: 6 }}>{phone}</span>}
             {log.status}{durStr ? ` · ${durStr}` : ''} · {relativeTime(log.started_at)}
-            {log.recording_url_mp3 && <span style={{ marginLeft: 6, color: '#3b82f6' }}>● REC</span>}
+            {log.recording_url_mp3 && <span style={{ marginLeft: 6, color: 'var(--tint)' }}>● REC</span>}
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8, flexShrink: 0 }} onClick={e => e.stopPropagation()}>
           {!isUnknown && onGoToMessages && (
             <button
               onClick={() => onGoToMessages(phone)}
-              style={{ background: 'none', border: '1px solid #2a2a2a', borderRadius: 6, padding: '5px 9px', color: '#9ca3af', cursor: 'pointer', fontSize: 11, fontWeight: 600 }}
+              style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 6, padding: '5px 9px', color: 'var(--text2)', cursor: 'pointer', fontSize: 11, fontWeight: 600 }}
               title="Open message thread"
             >
               Message
@@ -2121,31 +1398,31 @@ function CallLogRow({ log, icon, phone, isUnknown, knownName, durStr, onCall, on
           {isUnknown && onCreateContact && (
             <button
               onClick={() => onCreateContact(phone)}
-              style={{ background: 'none', border: '1px solid #16a34a', borderRadius: 6, padding: '5px 9px', color: '#16a34a', cursor: 'pointer', fontSize: 11, fontWeight: 600 }}
+              style={{ background: 'none', border: '1px solid var(--sea-green)', borderRadius: 6, padding: '5px 9px', color: 'var(--sea-green)', cursor: 'pointer', fontSize: 11, fontWeight: 600 }}
               title="Save as contact"
             >
               + Contact
             </button>
           )}
-          <button onClick={() => onCall(phone, knownName || null)} style={{ background: 'none', border: '1px solid #2a2a2a', borderRadius: 6, padding: '6px 10px', color: '#16a34a', cursor: 'pointer', fontSize: 14 }} title="Call back">📞</button>
+          <button onClick={() => onCall(phone, knownName || null)} style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 10px', color: 'var(--sea-green)', cursor: 'pointer', fontSize: 14 }} title="Call back">📞</button>
         </div>
-        <span style={{ color: '#6b7280', fontSize: 12, flexShrink: 0 }}>{expanded ? '▲' : '▼'}</span>
+        <span style={{ color: 'var(--text3)', fontSize: 12, flexShrink: 0 }}>{expanded ? '▲' : '▼'}</span>
       </div>
 
       {expanded && (
         <div style={{ padding: '0 16px 14px 64px', display: 'flex', flexDirection: 'column', gap: 8 }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 16px', fontSize: 12 }}>
-            <div><span style={{ color: '#6b7280' }}>Direction:</span> <span style={{ color: '#fff' }}>{log.direction || '—'}</span></div>
-            <div><span style={{ color: '#6b7280' }}>Status:</span> <span style={{ color: '#fff' }}>{log.status}</span></div>
-            <div><span style={{ color: '#6b7280' }}>From:</span> <span style={{ color: '#fff' }}>{log.from_number || '—'}</span></div>
-            <div><span style={{ color: '#6b7280' }}>To:</span> <span style={{ color: '#fff' }}>{log.to_number || '—'}</span></div>
-            <div><span style={{ color: '#6b7280' }}>Started:</span> <span style={{ color: '#fff' }}>{formatTime(log.started_at)}</span></div>
-            <div><span style={{ color: '#6b7280' }}>Duration:</span> <span style={{ color: '#fff' }}>{durStr || '0:00'}</span></div>
+            <div><span style={{ color: 'var(--text3)' }}>Direction:</span> <span style={{ color: 'var(--text)' }}>{log.direction || '—'}</span></div>
+            <div><span style={{ color: 'var(--text3)' }}>Status:</span> <span style={{ color: 'var(--text)' }}>{log.status}</span></div>
+            <div><span style={{ color: 'var(--text3)' }}>From:</span> <span style={{ color: 'var(--text)' }}>{log.from_number || '—'}</span></div>
+            <div><span style={{ color: 'var(--text3)' }}>To:</span> <span style={{ color: 'var(--text)' }}>{log.to_number || '—'}</span></div>
+            <div><span style={{ color: 'var(--text3)' }}>Started:</span> <span style={{ color: 'var(--text)' }}>{formatTime(log.started_at)}</span></div>
+            <div><span style={{ color: 'var(--text3)' }}>Duration:</span> <span style={{ color: 'var(--text)' }}>{durStr || '0:00'}</span></div>
           </div>
 
           {log.recording_url_mp3 && (
             <div style={{ marginTop: 4 }}>
-              <div style={{ fontSize: 11, color: '#6b7280', marginBottom: 6, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Call Recording</div>
+              <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 6, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Call Recording</div>
               <audio
                 controls
                 preload="none"
@@ -2156,7 +1433,7 @@ function CallLogRow({ log, icon, phone, isUnknown, knownName, durStr, onCall, on
           )}
 
           {!log.recording_url_mp3 && (
-            <div style={{ fontSize: 12, color: '#6b7280', fontStyle: 'italic' }}>No recording available</div>
+            <div style={{ fontSize: 12, color: 'var(--text3)', fontStyle: 'italic' }}>No recording available</div>
           )}
         </div>
       )}
@@ -2166,12 +1443,12 @@ function CallLogRow({ log, icon, phone, isUnknown, knownName, durStr, onCall, on
 
 function CallLogsSection({ logs, onCall, conversations, onCreateContact, onGoToMessages }) {
   const statusIcon = {
-    completed: { icon: '↗', color: '#16a34a' },
-    missed: { icon: '↙', color: '#ef4444' },
-    initiated: { icon: '↗', color: '#9ca3af' },
-    failed: { icon: '✕', color: '#ef4444' },
-    declined: { icon: '✕', color: '#ef4444' },
-    answered: { icon: '↔', color: '#3b82f6' }
+    completed: { icon: '↗', color: 'var(--sea-green)' },
+    missed: { icon: '↙', color: 'var(--rescue-orange)' },
+    initiated: { icon: '↗', color: 'var(--text2)' },
+    failed: { icon: '✕', color: 'var(--rescue-orange)' },
+    declined: { icon: '✕', color: 'var(--rescue-orange)' },
+    answered: { icon: '↔', color: 'var(--tint)' }
   };
 
   function normPhone(p) {
@@ -2190,7 +1467,7 @@ function CallLogsSection({ logs, onCall, conversations, onCreateContact, onGoToM
   }
 
   if (!logs.length) return (
-    <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9ca3af', fontSize: 14 }}>
+    <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text2)', fontSize: 14 }}>
       No calls yet
     </div>
   );
@@ -2198,7 +1475,7 @@ function CallLogsSection({ logs, onCall, conversations, onCreateContact, onGoToM
   return (
     <div style={{ flex: 1, overflowY: 'auto' }}>
       {logs.map(log => {
-        const icon = statusIcon[log.status] || { icon: '?', color: '#9ca3af' };
+        const icon = statusIcon[log.status] || { icon: '?', color: 'var(--text2)' };
         const rawPhone = log.contact_phone;
         const phone = normalisePhoneFrontend(rawPhone) || rawPhone;
         const nk = normPhone(phone);
@@ -2224,19 +1501,19 @@ function VoiceTab({ callLogs, dialNumber, setDialNumber, onCall, voiceReady, con
   const [activeSection, setActiveSection] = useState('dialer');
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      <div style={{ display: 'flex', borderBottom: '1px solid #2a2a2a', padding: '0 16px' }}>
+      <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', padding: '0 16px' }}>
         {['dialer', 'logs'].map(s => (
           <button key={s} onClick={() => setActiveSection(s)} style={{
             background: 'none', border: 'none', padding: '14px 16px',
-            color: activeSection === s ? '#16a34a' : '#9ca3af',
-            borderBottom: activeSection === s ? '2px solid #16a34a' : '2px solid transparent',
+            color: activeSection === s ? 'var(--tint)' : 'var(--text2)',
+            borderBottom: activeSection === s ? '2px solid var(--tint)' : '2px solid transparent',
             cursor: 'pointer', fontSize: 13, textTransform: 'capitalize', letterSpacing: '0.06em'
           }}>
             {s === 'dialer' ? 'Dialer' : 'Call Log'}
           </button>
         ))}
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, color: '#9ca3af' }}>
-          <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#16a34a' }} />
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, color: 'var(--text2)' }}>
+          <div style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--sea-green)' }} />
           iPhone calling only
         </div>
       </div>
@@ -2245,10 +1522,10 @@ function VoiceTab({ callLogs, dialNumber, setDialNumber, onCall, voiceReady, con
       )}
       {activeSection === 'logs' && (
         <>
-          <div style={{ padding: '8px 16px', borderBottom: '1px solid #1a1a1a', display: 'flex', justifyContent: 'flex-end' }}>
+          <div style={{ padding: '8px 16px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end' }}>
             <button
               onClick={onBackfillRecordings}
-              style={{ background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 6, padding: '5px 12px', color: '#3b82f6', cursor: 'pointer', fontSize: 11, fontWeight: 600 }}
+              style={{ background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 6, padding: '5px 12px', color: 'var(--tint)', cursor: 'pointer', fontSize: 11, fontWeight: 600 }}
               title="Pull all recordings from Telnyx and match to call logs"
             >
               Sync Recordings
@@ -2272,10 +1549,7 @@ function App() {
   const [sseStatus, setSseStatus] = useState('connecting');
   const [sending, setSending] = useState(false);
   const [toasts, setToasts] = useState([]);
-  const [syncing, setSyncing] = useState(false);
-  const [statusSyncing, setStatusSyncing] = useState(false);
-  const [catchingUp, setCatchingUp] = useState(false);
-  const [mainTab, setMainTab] = useState('contacts'); // 'contacts' | 'messages' | 'activity' | 'voice'
+  const [mainTab, setMainTab] = useState('contacts'); // 'contacts' | 'messages' | 'voice'
   const [mobileSub, setMobileSub] = useState('list'); // 'list' | 'thread'
   const [contactPrefill, setContactPrefill] = useState(null);
   const [attachments, setAttachments] = useState([]); // pending composer images
@@ -2296,7 +1570,7 @@ function App() {
   const activeCallRef = useRef(null);
   const durationTimerRef = useRef(null);
   const vibrationIntervalRef = useRef(null);
-  const callerNumberRef = useRef('+13054043184');
+  const callerNumberRef = useRef('+15613630929');
   const callStartRef = useRef(null);
   const callDirectionRef = useRef('outbound');
 
@@ -2409,20 +1683,6 @@ function App() {
           return;
         }
 
-        // Dispatch to Activity tab SSE listener
-        window.dispatchEvent(new CustomEvent('vici-sse', { detail: evt }));
-
-        if (evt.type === 'order_status_updated') {
-          const { phone: updatedPhone, status: updatedStatus } = evt;
-          const now = new Date().toISOString();
-          setConversations(prev => prev.map(c =>
-            c.phone === updatedPhone
-              ? { ...c, latest_order_status: updatedStatus, last_seen: now }
-              : c
-          ));
-          return;
-        }
-
         if (evt.type === 'call_update') {
           if (evt.event === 'hangup') {
             loadCallLogs();
@@ -2512,7 +1772,7 @@ function App() {
 
     const n = new Notification(title, {
       body,
-      tag: phoneTag ? encodeURIComponent(phoneTag) : 'vici-sms',
+      tag: phoneTag ? encodeURIComponent(phoneTag) : 'shore-inbox',
       icon: '/icons/icon-192.png',
       badge: '/icons/icon-192.png',
       requireInteraction: false
@@ -2564,7 +1824,7 @@ function App() {
   // contains no SDK loader and never requests `/api/voice/token`.
   async function initVoiceClient() {
     setVoiceReady(false);
-    addToast('Calling is available in the Vici Inbox iPhone app');
+    addToast('Calling is available in the Shore Inbox iPhone app');
   }
 
   // Tear down any existing client and reconnect only after an explicit user
@@ -2596,8 +1856,6 @@ function App() {
     const rawPhone = call.options?.remoteCallerNumber || call.options?.destinationNumber || 'Unknown';
     const phone = normalisePhoneFrontend(rawPhone) || rawPhone;
 
-    console.log('[VOICE] Call state:', state, 'phone: ...'+phone.slice(-4));
-
     switch (state) {
       case 'ringing':
         callDirectionRef.current = 'inbound';
@@ -2624,7 +1882,7 @@ function App() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ call_control_id: call.id })
           })
-            .then(r => { if (r.ok) { console.log('[VOICE] Outbound auto-record started'); setCallState(prev => ({ ...prev, isRecording: true })); } })
+            .then(r => { if (r.ok) setCallState(prev => ({ ...prev, isRecording: true })); })
             .catch(() => {});
         }
         break;
@@ -2789,7 +2047,7 @@ function App() {
     } catch (err) { console.error('[VOICE] loadCallLogs failed:', err.message); }
   }
 
-  // Called from ContactModal "Open Message Thread" button
+  // Jump from any view straight into a message thread
   function goToMessages(phone) {
     selectContact(phone);
     setMainTab('messages');
@@ -2870,53 +2128,6 @@ function App() {
   async function handleLogout() {
     await api('POST', '/auth/logout').catch(() => {});
     setAuth({ checking: false, ok: false });
-  }
-
-  async function runCatchup() {
-    try {
-      const preview = await api('GET', '/api/catchup/preview');
-      if (preview.total_to_send === 0) {
-        addToast('No catch-up messages to send — everyone is up to date');
-        return;
-      }
-      const confirmed = window.confirm(
-        `Send catch-up SMS to:\n• ${preview.processing.count} processing orders (order confirmed)\n• ${preview.shipped.count} shipped orders (tracking)\n\nTotal: ${preview.total_to_send} messages\n\nProceed?`
-      );
-      if (!confirmed) return;
-      setCatchingUp(true);
-      addToast(`Sending ${preview.total_to_send} catch-up messages…`);
-      const result = await api('POST', '/api/catchup/send');
-      addToast(`Done — ${result.sent} sent, ${result.failed} failed`);
-      loadConversations();
-    } catch (e) {
-      addToast('Catch-up error: ' + e.message);
-    } finally {
-      setCatchingUp(false);
-    }
-  }
-
-  async function syncWoo() {
-    setSyncing(true);
-    try {
-      await api('POST', '/api/sync/woocommerce');
-      addToast('WooCommerce sync started — may take 1-2 min');
-      setTimeout(() => { loadConversations(); setSyncing(false); }, 5000);
-    } catch (e) {
-      addToast('WooCommerce sync: ' + e.message);
-      setSyncing(false);
-    }
-  }
-
-  async function syncStatuses() {
-    setStatusSyncing(true);
-    try {
-      await api('POST', '/api/sync/statuses');
-      addToast('Status sync started — contacts updating in real-time…');
-      setTimeout(() => { loadConversations(); setStatusSyncing(false); }, 8000);
-    } catch (e) {
-      addToast('Status sync: ' + e.message);
-      setStatusSyncing(false);
-    }
   }
 
   const totalUnread = conversations.reduce((sum, c) => sum + (c.unread_count || 0), 0);
@@ -3062,7 +2273,7 @@ function App() {
 
       {/* ── Header ── */}
       <div className="header">
-        <div className="header-logo">VICI<small>// SMS</small></div>
+        <div className="header-logo">The Shore Academy<small>Inbox</small></div>
 
         {/* Desktop tab navigation */}
         <div className="header-tabs">
@@ -3079,19 +2290,13 @@ function App() {
             MESSAGES {totalUnread > 0 && `(${totalUnread})`}
           </button>
           <button
-            className={`header-tab${mainTab === 'activity' ? ' active' : ''}`}
-            onClick={() => setMainTab('activity')}
-          >
-            ACTIVITY
-          </button>
-          <button
             className={`header-tab${mainTab === 'voice' ? ' active' : ''}`}
             onClick={() => setMainTab('voice')}
           >
             VOICE
             <span style={{
               width: 6, height: 6, borderRadius: '50%',
-              background: voiceReady ? '#16a34a' : '#9ca3af',
+              background: voiceReady ? 'var(--sea-green)' : 'var(--text3)',
               display: 'inline-block', marginLeft: 5, verticalAlign: 'middle'
             }} />
           </button>
@@ -3130,16 +2335,7 @@ function App() {
               ✉︎ TEST
             </button>
           )}
-          <button className="hdr-btn" disabled={statusSyncing} onClick={syncStatuses} title="Update all order statuses from WooCommerce — no messages sent">
-            {statusSyncing ? '…' : '↻ STATUS'}
-          </button>
-          <button className="hdr-btn" disabled={syncing} onClick={syncWoo} title="Sync WooCommerce orders + contacts">
-            {syncing ? '…' : '↻ WOO'}
-          </button>
-          <button className="hdr-btn hdr-btn-catchup" disabled={catchingUp} onClick={runCatchup} title="Send catch-up SMS to processing/shipped orders that never got automated messages">
-            {catchingUp ? '…' : '✉ CATCHUP'}
-          </button>
-          <button className="hdr-btn" onClick={handleLogout}>EXIT</button>
+          <button className="hdr-btn" onClick={handleLogout}>SIGN OUT</button>
         </div>
       </div>
 
@@ -3181,9 +2377,6 @@ function App() {
             setReplyTarget={setReplyTarget}
             onReact={handleReact}
           />
-        )}
-        {mainTab === 'activity' && (
-          <ActivityTab sseStatus={sseStatus} />
         )}
         {mainTab === 'voice' && (
           <VoiceTab
@@ -3244,19 +2437,12 @@ function App() {
               {totalUnread > 0 && <span className="bnav-badge">{totalUnread}</span>}
             </button>
             <button
-              className={`bnav-btn${mainTab === 'activity' ? ' active' : ''}`}
-              onClick={() => setMainTab('activity')}
-            >
-              <span className="bnav-icon">⚡</span>
-              Activity
-            </button>
-            <button
               className={`bnav-btn${mainTab === 'voice' ? ' active' : ''}`}
               onClick={() => setMainTab('voice')}
             >
               <span className="bnav-icon">📞</span>
               Voice
-              <span style={{ width: 6, height: 6, borderRadius: '50%', background: voiceReady ? '#16a34a' : '#9ca3af', display: 'inline-block', marginLeft: 4 }} />
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: voiceReady ? 'var(--sea-green)' : 'var(--text3)', display: 'inline-block', marginLeft: 4 }} />
             </button>
           </div>
         </nav>
