@@ -1,4 +1,8 @@
 require('dotenv').config();
+// Before ./db or ./push-notify: both throw from inside a dependency when their
+// configuration is missing, which reads only as "service unavailable" on the
+// deployment platform. This turns that into a named list of variables.
+require('./lib/startup-check')();
 const express      = require('express');
 const cookieSession = require('cookie-session');
 const cors    = require('cors');
@@ -91,8 +95,18 @@ app.use('/api/voice',         requireAuth, require('./routes/voice'));
 // Voice webhooks (public — Telnyx calls this directly)
 app.use('/webhooks/voice', require('./routes/voice-webhook'));
 
+// Answers 200 even when the database is unreachable, and says so in the body.
+// A deploy that fails its health check is rolled away along with its logs, so
+// the platform never shows why. Reporting "degraded" keeps the container up
+// and the cause readable.
+let databaseReady = false;
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', uptime: Math.floor(process.uptime()), ts: new Date().toISOString() });
+  res.json({
+    status: databaseReady ? 'ok' : 'degraded',
+    database: databaseReady ? 'connected' : 'unreachable',
+    uptime: Math.floor(process.uptime()),
+    ts: new Date().toISOString()
+  });
 });
 
 app.use(express.static(path.join(__dirname, 'public')));
@@ -101,9 +115,11 @@ app.get('/{*splat}', (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, async () => {
-  await verifyConnection();
-  console.log(`Shore Academy Inbox running on port ${PORT}`);
+// 0.0.0.0 explicitly: the container's health check reaches the process from
+// outside, so binding only to loopback would look identical to a crash.
+app.listen(PORT, '0.0.0.0', async () => {
+  console.log(`Shore Academy Inbox listening on 0.0.0.0:${PORT}`);
+  databaseReady = await verifyConnection();
   console.log(`Telnyx: ${process.env.TELNYX_PHONE_NUMBER}`);
   console.log(`GHL: ${process.env.GHL_PIT ? 'configured' : 'NOT configured'}`);
   console.log('Automations: none — all marketing automation lives in GoHighLevel');

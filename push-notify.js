@@ -1,15 +1,27 @@
 const webpush = require('web-push');
 const { supabase } = require('./db');
 
-webpush.setVapidDetails(
-  process.env.VAPID_SUBJECT || 'mailto:lubosi@kongwatech.com',
-  process.env.VAPID_PUBLIC_KEY,
-  process.env.VAPID_PRIVATE_KEY
-);
+// Browser push is a secondary channel — the iPhone app uses APNs directly.
+// setVapidDetails throws on missing or malformed keys, and this runs at
+// require time, so an unguarded call takes the whole server down over a
+// notification feature.
+let webPushReady = false;
+try {
+  webpush.setVapidDetails(
+    process.env.VAPID_SUBJECT || 'mailto:lubosi@kongwatech.com',
+    process.env.VAPID_PUBLIC_KEY,
+    process.env.VAPID_PRIVATE_KEY
+  );
+  webPushReady = true;
+} catch (err) {
+  console.warn('[PUSH] Browser push disabled — VAPID keys rejected:', err.message);
+}
 
 // Send a push notification to every stored subscription.
 // Payload: { title, body, url, icon }
 async function sendPushToAll(payload) {
+  // Without usable VAPID keys every send would throw; skip quietly instead.
+  if (!webPushReady) return;
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
   const { data: subs, error: dbErr } = await supabase
     .from('push_subscriptions')
