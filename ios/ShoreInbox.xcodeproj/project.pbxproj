@@ -1,0 +1,405 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		0DD7DF10212AE2F2CE75D9C8 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46BD3D55A39571A786A1E668 /* AppDelegate.swift */; };
+		755A5858B37715E096DD4C16 /* FeatureModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 206A633598F4F15CC86ADE6D /* FeatureModels.swift */; };
+		5AC888DAD4977DC27A05AB09 /* MessageNotificationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 723392A4EF3D46B6CDBA3E0E /* MessageNotificationManager.swift */; };
+		2423140C979368AC14E3CB67 /* SessionModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D7F64B09A3DA5E978C771B9 /* SessionModel.swift */; };
+		CBE0ABB4E927A5F24E69F205 /* ShoreInboxApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FE7CB3F15B0959C0F8E0BFC /* ShoreInboxApp.swift */; };
+		315B12766EA45BA626AF6CB0 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF6DE4D16575F3B93E7C6CDB /* APIClient.swift */; };
+		4BC6A3609981721E6DEA796D /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = C92FFE16E73427859E04C2CC /* AppConfig.swift */; };
+		C3F88DF53CCE4FFF4B7F8023 /* CredentialStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1AEA2F159D3DEE5C2C5A5667 /* CredentialStore.swift */; };
+		2CE24CCA6B1AA5D178D34D2E /* Log.swift in Sources */ = {isa = PBXBuildFile; fileRef = F27E74EB448869F0491F7515 /* Log.swift */; };
+		3E53C88244452AA4E39256F7 /* MobileModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43CDA18E47DE5485B1A12DE9 /* MobileModels.swift */; };
+		9D46765744B2B61F0E31F5CF /* DialerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAFB4AD5F892B888956583E6 /* DialerView.swift */; };
+		1F853695D97876420079E2EC /* InCallView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A915590E1CC6ACBB24614C16 /* InCallView.swift */; };
+		8CD5B5A27889E538A3010350 /* InboxViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F239EBC63858FAE85DF2706 /* InboxViews.swift */; };
+		C71E094E363A3A1A6C09A8DE /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F01951658CCF6241A34D4384 /* LoginView.swift */; };
+		99E7A876D5449EC4C3083EA6 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4767D7D7BB739DA1B8080AB /* RootView.swift */; };
+		898409B55D1AF648B6B5845B /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6140CBF6B2D2DEABEC0486D2 /* Theme.swift */; };
+		7F4940C84FDD5B5026171FC2 /* WorkspaceViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35E678EED92EE277BDF38AC4 /* WorkspaceViews.swift */; };
+		4668760108E7876536CD89DF /* CallKitCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CF0F4684406E33F1BC33EC5 /* CallKitCoordinator.swift */; };
+		EF2627C2E6B1ED8FC753A1C2 /* CallModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3D6515065430ADB757FE688 /* CallModels.swift */; };
+		07FCB4B04228C75F453A0AC1 /* TelnyxVoiceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DECCF992D6F1FEE845212ED /* TelnyxVoiceManager.swift */; };
+		C0B8F3A5C9CB328107D5E86F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 9629271FA34932E6C3EB3AB1 /* Assets.xcassets */; };
+		05615C03B32EDD818CC516F9 /* telnyx-webrtc-ios in Frameworks */ = {isa = PBXBuildFile; productRef = 30FD16C8FEEF751AEF8AC830 /* telnyx-webrtc-ios */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		38A007151ABE87CC01A5B6E9 /* Shore Academy.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Shore Academy.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		46BD3D55A39571A786A1E668 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		206A633598F4F15CC86ADE6D /* FeatureModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureModels.swift; sourceTree = "<group>"; };
+		723392A4EF3D46B6CDBA3E0E /* MessageNotificationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageNotificationManager.swift; sourceTree = "<group>"; };
+		5D7F64B09A3DA5E978C771B9 /* SessionModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionModel.swift; sourceTree = "<group>"; };
+		4FE7CB3F15B0959C0F8E0BFC /* ShoreInboxApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShoreInboxApp.swift; sourceTree = "<group>"; };
+		CF6DE4D16575F3B93E7C6CDB /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
+		C92FFE16E73427859E04C2CC /* AppConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfig.swift; sourceTree = "<group>"; };
+		1AEA2F159D3DEE5C2C5A5667 /* CredentialStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CredentialStore.swift; sourceTree = "<group>"; };
+		F27E74EB448869F0491F7515 /* Log.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Log.swift; sourceTree = "<group>"; };
+		43CDA18E47DE5485B1A12DE9 /* MobileModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileModels.swift; sourceTree = "<group>"; };
+		BAFB4AD5F892B888956583E6 /* DialerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DialerView.swift; sourceTree = "<group>"; };
+		A915590E1CC6ACBB24614C16 /* InCallView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InCallView.swift; sourceTree = "<group>"; };
+		6F239EBC63858FAE85DF2706 /* InboxViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InboxViews.swift; sourceTree = "<group>"; };
+		F01951658CCF6241A34D4384 /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
+		E4767D7D7BB739DA1B8080AB /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		6140CBF6B2D2DEABEC0486D2 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
+		35E678EED92EE277BDF38AC4 /* WorkspaceViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceViews.swift; sourceTree = "<group>"; };
+		6CF0F4684406E33F1BC33EC5 /* CallKitCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CallKitCoordinator.swift; sourceTree = "<group>"; };
+		B3D6515065430ADB757FE688 /* CallModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CallModels.swift; sourceTree = "<group>"; };
+		5DECCF992D6F1FEE845212ED /* TelnyxVoiceManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TelnyxVoiceManager.swift; sourceTree = "<group>"; };
+		9629271FA34932E6C3EB3AB1 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		C507DAA5136E8D2663633EFC /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		64FC0BCD6C4AD6F670DC1F33 /* ShoreInbox.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ShoreInbox.entitlements; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		019BAB185F97B56993A7087D /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				05615C03B32EDD818CC516F9 /* telnyx-webrtc-ios in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		361FF3508AF23F4E0CB329EA = {
+			isa = PBXGroup;
+			children = (
+				223FFD38A4EFAEE39B72969C /* ShoreInbox */,
+				31793280A19CDC7880B10A8E /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		31793280A19CDC7880B10A8E /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				38A007151ABE87CC01A5B6E9 /* Shore Academy.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		52B0CA5238A8880EC14961ED /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				9629271FA34932E6C3EB3AB1 /* Assets.xcassets */,
+				C507DAA5136E8D2663633EFC /* Info.plist */,
+				64FC0BCD6C4AD6F670DC1F33 /* ShoreInbox.entitlements */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		13A48EB013ABE1002ADD668D /* App */ = {
+			isa = PBXGroup;
+			children = (
+				46BD3D55A39571A786A1E668 /* AppDelegate.swift */,
+				206A633598F4F15CC86ADE6D /* FeatureModels.swift */,
+				723392A4EF3D46B6CDBA3E0E /* MessageNotificationManager.swift */,
+				5D7F64B09A3DA5E978C771B9 /* SessionModel.swift */,
+				4FE7CB3F15B0959C0F8E0BFC /* ShoreInboxApp.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		B3FD2A3FD154A79E7B95628E /* Core */ = {
+			isa = PBXGroup;
+			children = (
+				CF6DE4D16575F3B93E7C6CDB /* APIClient.swift */,
+				C92FFE16E73427859E04C2CC /* AppConfig.swift */,
+				1AEA2F159D3DEE5C2C5A5667 /* CredentialStore.swift */,
+				F27E74EB448869F0491F7515 /* Log.swift */,
+				43CDA18E47DE5485B1A12DE9 /* MobileModels.swift */,
+			);
+			path = Core;
+			sourceTree = "<group>";
+		};
+		CD5EA4C931CC6FFB888893C7 /* UI */ = {
+			isa = PBXGroup;
+			children = (
+				BAFB4AD5F892B888956583E6 /* DialerView.swift */,
+				A915590E1CC6ACBB24614C16 /* InCallView.swift */,
+				6F239EBC63858FAE85DF2706 /* InboxViews.swift */,
+				F01951658CCF6241A34D4384 /* LoginView.swift */,
+				E4767D7D7BB739DA1B8080AB /* RootView.swift */,
+				6140CBF6B2D2DEABEC0486D2 /* Theme.swift */,
+				35E678EED92EE277BDF38AC4 /* WorkspaceViews.swift */,
+			);
+			path = UI;
+			sourceTree = "<group>";
+		};
+		249A304067F2ADEB3C080806 /* Voice */ = {
+			isa = PBXGroup;
+			children = (
+				6CF0F4684406E33F1BC33EC5 /* CallKitCoordinator.swift */,
+				B3D6515065430ADB757FE688 /* CallModels.swift */,
+				5DECCF992D6F1FEE845212ED /* TelnyxVoiceManager.swift */,
+			);
+			path = Voice;
+			sourceTree = "<group>";
+		};
+		223FFD38A4EFAEE39B72969C /* ShoreInbox */ = {
+			isa = PBXGroup;
+			children = (
+				13A48EB013ABE1002ADD668D /* App */,
+				B3FD2A3FD154A79E7B95628E /* Core */,
+				CD5EA4C931CC6FFB888893C7 /* UI */,
+				249A304067F2ADEB3C080806 /* Voice */,
+				52B0CA5238A8880EC14961ED /* Resources */,
+			);
+			path = ShoreInbox;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		0E8A3AD980EC179856012B7E /* ShoreInbox */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A886B50DF087AEF7B87CDC65 /* Build configuration list */;
+			buildPhases = (
+				C2511B36F0F0E810A9E46328 /* Sources */,
+				019BAB185F97B56993A7087D /* Frameworks */,
+				C2112B99FC6905E49DE55430 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = ShoreInbox;
+			packageProductDependencies = (
+				30FD16C8FEEF751AEF8AC830 /* telnyx-webrtc-ios */,
+			);
+			productName = "Shore Academy";
+			productReference = 38A007151ABE87CC01A5B6E9 /* Shore Academy.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		98F54143AB4E86B28C3AFEE0 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1600;
+				LastUpgradeCheck = 1600;
+				TargetAttributes = {
+					0E8A3AD980EC179856012B7E = {
+						CreatedOnToolsVersion = 16.0;
+					};
+				};
+			};
+			buildConfigurationList = 26E84C2B3712F7DFAC8AD93F /* Build configuration list */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 361FF3508AF23F4E0CB329EA;
+			packageReferences = (
+				82D8E347E85B29BFCE8F9C84 /* XCRemoteSwiftPackageReference */,
+			);
+			productRefGroup = 31793280A19CDC7880B10A8E /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				0E8A3AD980EC179856012B7E /* ShoreInbox */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		C2112B99FC6905E49DE55430 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C0B8F3A5C9CB328107D5E86F /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		C2511B36F0F0E810A9E46328 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				0DD7DF10212AE2F2CE75D9C8 /* AppDelegate.swift in Sources */,
+				755A5858B37715E096DD4C16 /* FeatureModels.swift in Sources */,
+				5AC888DAD4977DC27A05AB09 /* MessageNotificationManager.swift in Sources */,
+				2423140C979368AC14E3CB67 /* SessionModel.swift in Sources */,
+				CBE0ABB4E927A5F24E69F205 /* ShoreInboxApp.swift in Sources */,
+				315B12766EA45BA626AF6CB0 /* APIClient.swift in Sources */,
+				4BC6A3609981721E6DEA796D /* AppConfig.swift in Sources */,
+				C3F88DF53CCE4FFF4B7F8023 /* CredentialStore.swift in Sources */,
+				2CE24CCA6B1AA5D178D34D2E /* Log.swift in Sources */,
+				3E53C88244452AA4E39256F7 /* MobileModels.swift in Sources */,
+				9D46765744B2B61F0E31F5CF /* DialerView.swift in Sources */,
+				1F853695D97876420079E2EC /* InCallView.swift in Sources */,
+				8CD5B5A27889E538A3010350 /* InboxViews.swift in Sources */,
+				C71E094E363A3A1A6C09A8DE /* LoginView.swift in Sources */,
+				99E7A876D5449EC4C3083EA6 /* RootView.swift in Sources */,
+				898409B55D1AF648B6B5845B /* Theme.swift in Sources */,
+				7F4940C84FDD5B5026171FC2 /* WorkspaceViews.swift in Sources */,
+				4668760108E7876536CD89DF /* CallKitCoordinator.swift in Sources */,
+				EF2627C2E6B1ED8FC753A1C2 /* CallModels.swift in Sources */,
+				07FCB4B04228C75F453A0AC1 /* TelnyxVoiceManager.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		F93C7AA9E9B99545F767BA13 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				COPY_PHASE_STRIP = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.9;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_TESTABILITY = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+									"DEBUG=1",
+									"$(inherited)",
+				);
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				ONLY_ACTIVE_ARCH = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		2ACD8C723DC350F8B910D0A5 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				COPY_PHASE_STRIP = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.9;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		548D9D70B515C18F8B253F91 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = ShoreInbox/Resources/ShoreInbox.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = PQFYN2CD77;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = ShoreInbox/Resources/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+									"$(inherited)",
+									"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.theshoreacademy.inbox;
+				PRODUCT_NAME = "Shore Academy";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		27D2C33D056E818B56FD33AF /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = ShoreInbox/Resources/ShoreInbox.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = PQFYN2CD77;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = ShoreInbox/Resources/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+									"$(inherited)",
+									"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.theshoreacademy.inbox;
+				PRODUCT_NAME = "Shore Academy";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		26E84C2B3712F7DFAC8AD93F /* Build configuration list for PBXProject "ShoreInbox" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F93C7AA9E9B99545F767BA13 /* Debug */,
+				2ACD8C723DC350F8B910D0A5 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A886B50DF087AEF7B87CDC65 /* Build configuration list for PBXNativeTarget "ShoreInbox" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				548D9D70B515C18F8B253F91 /* Debug */,
+				27D2C33D056E818B56FD33AF /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		82D8E347E85B29BFCE8F9C84 /* XCRemoteSwiftPackageReference "telnyx-webrtc-ios" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/team-telnyx/telnyx-webrtc-ios";
+			requirement = {
+				kind = exactVersion;
+				version = 4.1.2;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		30FD16C8FEEF751AEF8AC830 /* telnyx-webrtc-ios */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 82D8E347E85B29BFCE8F9C84 /* XCRemoteSwiftPackageReference */;
+			productName = telnyx-webrtc-ios;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 98F54143AB4E86B28C3AFEE0 /* Project object */;
+}

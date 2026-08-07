@@ -1,0 +1,229 @@
+const router = require('express').Router();
+const { supabase } = require('../db');
+const { isNativeIOSClient } = require('../lib/client-platform');
+const { getIOSVoiceCredentials } = require('../lib/voice-credentials');
+const { normalisePhone } = require('../lib/phone');
+const { isInternalSIPLog, answeredAtFromDuration } = require('../lib/call-status');
+const { countUnseenMissedCalls, markMissedCallsSeen } = require('../lib/missed-calls');
+
+// GET /api/voice/token — returns SIP credentials to the native iOS app only.
+// Protected by requireAuth at mount point in server.js
+router.get('/token', async (req, res) => {
+  try {
+    if (!isNativeIOSClient(req.get('user-agent'), req.get('x-vici-client'))) {
+      return res.status(403).json({
+        error: 'Browser calling is disabled; use Shore Academy Inbox on iPhone.'
+      });
+    }
+
+    // SIP credentials must never be cached by a browser, proxy, or the app's
+    // URL cache. The iOS app keeps the current value securely in Keychain.
+    res.set('Cache-Control', 'no-store');
+    const credentials = getIOSVoiceCredentials();
+    res.json({
+      login: credentials.login,
+      password: credentials.password,
+      callerNumber: process.env.TELNYX_PHONE_NUMBER
+    });
+  } catch (err) {
+    console.error('[VOICE] Token error:', err.message);
+    res.status(500).json({ error: 'Could not get voice credentials' });
+  }
+});
+
+// GET /api/voice/logs?phone=&page=1
+router.get('/logs', async (req, res) => {
+  const { phone, page = 1 } = req.query;
+  const limit = 50;
+  const offset = (parseInt(page) - 1) * limit;
+
+  let query = supabase
+    .from('call_logs')
+    .select('*')
+    .order('started_at', { ascending: false })
+    .range(offset, offset + limit - 1);
+
+  if (phone) query = query.eq('contact_phone', decodeURIComponent(phone));
+
+  const { data, error } = await query;
+  if (error) return res.status(500).json({ error: error.message });
+
+  // The transfer to sip:USERNAME is an implementation detail, not a second
+  // person-facing call. Keep it in the database for diagnostics but never show
+  // it as a failed call in History.
+  const logs = (data || []).filter(log => !isInternalSIPLog(log));
+  const phones = [...new Set(logs.map(log => log.contact_phone).filter(Boolean))];
+  let names = new Map();
+  if (phones.length) {
+    const { data: contacts, error: contactsError } = await supabase
+      .from('sms_contacts')
+      .select('phone, first_name, last_name, name')
+      .in('phone', phones);
+    if (contactsError) console.warn('[VOICE] Call-history contact lookup failed:', contactsError.message);
+    names = new Map((contacts || []).map(contact => {
+      const fullName = `${contact.first_name || ''} ${contact.last_name || ''}`.trim() || contact.name || null;
+      return [contact.phone, fullName];
+    }));
+  }
+
+  res.json(logs.map(log => ({ ...log, contact_name: names.get(log.contact_phone) || null })));
+});
+
+// GET /api/voice/missed-count — outstanding missed calls for the app badge
+router.get('/missed-count', async (_req, res) => {
+  res.json({ count: await countUnseenMissedCalls() });
+});
+
+// POST /api/voice/logs/seen — the operator opened call history, so the missed
+// calls in it are no longer new. Registered before /logs/:id so the literal
+// path is never mistaken for a record id.
+router.post('/logs/seen', async (_req, res) => {
+  const { marked, ok } = await markMissedCallsSeen();
+  // A failure here only means the badge did not clear server-side; the app
+  // keeps its own record of what has been seen, so report the outcome rather
+  // than failing the request.
+  res.json({ marked, ok, count: await countUnseenMissedCalls() });
+});
+
+// GET /api/voice/logs/:id
+router.get('/logs/:id', async (req, res) => {
+  const { data } = await supabase
+    .from('call_logs')
+    .select('*')
+    .eq('id', req.params.id)
+    .single();
+  res.json(data || null);
+});
+
+// POST /api/voice/logs — client-side fallback when Telnyx webhook doesn't fire
+router.post('/logs', async (req, res) => {
+  const { call_control_id, direction, contact_phone, from_number, to_number,
+          duration_seconds, status, started_at, ended_at, source } = req.body;
+
+  if (!contact_phone) return res.status(400).json({ error: 'contact_phone required' });
+
+  // The iPhone knows whether WebRTC actually reached ACTIVE. Reconcile that
+  // outcome onto the server-created inbound row so History represents one
+  // logical call and does not confuse the backend greeting with a human answer.
+  if (source === 'ios' && direction === 'inbound') {
+    const phone = normalisePhone(contact_phone) || contact_phone;
+    const clientStartedMs = Date.parse(started_at || '');
+    const anchorMs = Number.isFinite(clientStartedMs) ? clientStartedMs : Date.now();
+    const lower = new Date(anchorMs - 2 * 60 * 1000).toISOString();
+    const upper = new Date(anchorMs + 2 * 60 * 1000).toISOString();
+    const { data: candidates, error: lookupError } = await supabase
+      .from('call_logs')
+      .select('call_control_id, started_at')
+      .eq('direction', 'inbound')
+      .eq('contact_phone', phone)
+      .gte('started_at', lower)
+      .lte('started_at', upper)
+      .order('started_at', { ascending: false })
+      .limit(5);
+
+    if (lookupError) {
+      console.warn('[VOICE] Native call reconciliation lookup failed:', lookupError.message);
+    } else if (candidates?.length) {
+      const match = candidates.reduce((closest, candidate) => {
+        if (!Number.isFinite(clientStartedMs)) return closest || candidate;
+        const distance = Math.abs(Date.parse(candidate.started_at) - clientStartedMs);
+        return !closest || distance < closest.distance ? { ...candidate, distance } : closest;
+      }, null);
+      const finalEndedAt = ended_at || new Date().toISOString();
+      const connected = status === 'completed' && Number(duration_seconds) > 0;
+      const { error: updateError } = await supabase.from('call_logs').update({
+        status: connected ? 'completed' : 'missed',
+        duration_seconds: connected ? Math.floor(Number(duration_seconds)) : 0,
+        answered_at: connected ? answeredAtFromDuration(finalEndedAt, duration_seconds) : null,
+        ended_at: finalEndedAt
+      }).eq('call_control_id', match.call_control_id);
+      if (updateError) return res.status(500).json({ error: updateError.message });
+      return res.json({ ok: true, reconciled: true });
+    }
+  }
+
+  const { error } = await supabase.from('call_logs').upsert({
+    call_control_id: call_control_id || `client-${Date.now()}`,
+    direction: direction || 'outbound',
+    contact_phone,
+    from_number: from_number || null,
+    to_number: to_number || null,
+    duration_seconds: duration_seconds || 0,
+    status: status || 'completed',
+    started_at: started_at || new Date().toISOString(),
+    ended_at: ended_at || new Date().toISOString(),
+    answered_at: duration_seconds > 0
+      ? answeredAtFromDuration(ended_at || new Date().toISOString(), duration_seconds)
+      : null
+  }, { onConflict: 'call_control_id' });
+
+  if (error) {
+    console.error('[VOICE] Log save error:', error.message);
+    return res.status(500).json({ error: error.message });
+  }
+  res.json({ ok: true });
+});
+
+// POST /api/voice/recording/start
+router.post('/recording/start', async (req, res) => {
+  const { call_control_id } = req.body;
+  if (!call_control_id) return res.status(400).json({ error: 'call_control_id required' });
+
+  try {
+    const response = await fetch(
+      `https://api.telnyx.com/v2/calls/${call_control_id}/actions/record_start`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${process.env.TELNYX_API_KEY}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ format: 'mp3', channels: 'dual', play_beep: true })
+      }
+    );
+    if (!response.ok) {
+      const err = await response.json();
+      return res.status(400).json({ error: err?.errors?.[0]?.detail || 'Recording start failed' });
+    }
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/voice/recording/stop
+router.post('/recording/stop', async (req, res) => {
+  const { call_control_id } = req.body;
+  if (!call_control_id) return res.status(400).json({ error: 'call_control_id required' });
+
+  try {
+    await fetch(
+      `https://api.telnyx.com/v2/calls/${call_control_id}/actions/record_stop`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${process.env.TELNYX_API_KEY}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({})
+      }
+    );
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/voice/backfill-recordings — pull all recordings from Telnyx and match to call_logs
+router.post('/backfill-recordings', async (req, res) => {
+  try {
+    const { backfillRecordings } = require('../scripts/backfill-recordings');
+    const result = await backfillRecordings();
+    res.json(result);
+  } catch (err) {
+    console.error('[VOICE] Backfill recordings error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+module.exports = router;

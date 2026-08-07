@@ -1,0 +1,190 @@
+name: iOS → TestFlight
+
+# Manual only because this workflow signs and uploads a release to TestFlight.
+# Source-only compilation runs separately in ios-build.yml.
+on:
+  workflow_dispatch:
+    inputs:
+      changelog:
+        description: "What testers should know about this build"
+        required: false
+        default: "Internal build"
+
+concurrency:
+  group: ios-testflight
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    # macos-26 is the image that carries Xcode 26, which App Store Connect has
+    # required since 28 April 2026. macos-15 ships Xcode 16 and uploads are
+    # rejected.
+    runs-on: macos-26
+    timeout-minutes: 60
+
+    env:
+      SCHEME: ShoreInbox
+      PROJECT: ios/ShoreInbox.xcodeproj
+      ARCHIVE: ${{ github.workspace }}/build/ShoreInbox.xcarchive
+      EXPORT_DIR: ${{ github.workspace }}/build/export
+      KEY_DIR: ${{ github.workspace }}/private_keys
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: |
+          echo "Xcode: $(xcodebuild -version | head -1)"
+          echo "macOS: $(sw_vers -productVersion)"
+          echo "fastlane: $(fastlane --version | tail -1)"
+
+      # The Xcode project is generated rather than maintained by Xcode, so a
+      # Swift file added without regenerating would silently not be compiled.
+      # Fail loudly here instead.
+      - name: Verify generated project is current
+        run: |
+          python3 ios/scripts/generate-xcodeproj.py
+          git diff --exit-code -- ios/ShoreInbox.xcodeproj
+          echo "Generated project is in sync."
+
+      # Compile without signing first. A failure here is source code, package
+      # resolution, or simulator compatibility — not Apple credentials.
+      - name: Compile for iOS Simulator
+        run: |
+          xcodebuild build \
+            -project "$PROJECT" \
+            -scheme "$SCHEME" \
+            -configuration Debug \
+            -destination "generic/platform=iOS Simulator" \
+            CODE_SIGNING_ALLOWED=NO
+
+      # xcodebuild reads the key from disk. Stored base64 so newlines in the
+      # .p8 survive GitHub's secret storage intact.
+      - name: Write App Store Connect API key
+        env:
+          ASC_KEY_P8_BASE64: ${{ secrets.ASC_KEY_P8_BASE64 }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          for name in ASC_KEY_P8_BASE64 ASC_KEY_ID ASC_ISSUER_ID; do
+            if [ -z "${!name}" ]; then
+              echo "::error::$name secret is not set"
+              exit 1
+            fi
+          done
+          mkdir -p "$KEY_DIR"
+          echo "$ASC_KEY_P8_BASE64" | base64 --decode > "$KEY_DIR/AuthKey_${ASC_KEY_ID}.p8"
+          # Prove it decoded to a real key without printing it.
+          head -1 "$KEY_DIR/AuthKey_${ASC_KEY_ID}.p8" | grep -q "BEGIN PRIVATE KEY" \
+            || { echo "::error::Decoded key is not a PEM private key — check the secret was base64 of the .p8"; exit 1; }
+          echo "API key written."
+
+      # Assemble the archive without development signing. A command-line
+      # archive otherwise asks Apple for a development profile, which requires
+      # at least one registered physical device. The export step below applies
+      # App Store distribution signing with the authenticated Team key.
+      - name: Archive
+        run: |
+          xcodebuild archive \
+            -project "$PROJECT" \
+            -scheme "$SCHEME" \
+            -configuration Release \
+            -destination "generic/platform=iOS" \
+            -archivePath "$ARCHIVE" \
+            CODE_SIGNING_ALLOWED=NO \
+            CURRENT_PROJECT_VERSION=${{ github.run_number }}
+
+      # An unsigned archive has no embedded code-signing entitlement blob.
+      # exportArchive can still apply a distribution profile, but it derives
+      # the final signature's requested capabilities from the archived app.
+      # Seed that metadata with a local ad-hoc signature so PushKit survives
+      # the later cloud-managed re-sign; the export replaces `development`
+      # with the profile's production environment.
+      - name: Seed archive push entitlements
+        run: |
+          APP=$(find "$ARCHIVE/Products/Applications" -maxdepth 1 -name "*.app" | head -1)
+          if [ -z "$APP" ]; then echo "::error::Archived app not found"; exit 1; fi
+          codesign --force --deep --sign - \
+            --entitlements ios/ShoreInbox/Resources/ShoreInbox.entitlements \
+            "$APP"
+          codesign -d --entitlements :- "$APP" > build/archive-entitlements.plist 2>/dev/null
+          ARCHIVE_ENV=$(plutil -extract aps-environment raw build/archive-entitlements.plist 2>/dev/null || true)
+          if [ "$ARCHIVE_ENV" != "development" ]; then
+            echo "::error::Archived app is missing its requested push entitlement"
+            exit 1
+          fi
+          echo "Archived app carries the requested push capability."
+
+      # -allowProvisioningUpdates plus the authentication flags turns on
+      # cloud-managed distribution signing. The API key must be a Team key
+      # with the Admin role or this step is refused.
+      - name: Export .ipa
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          set -o pipefail
+          xcodebuild -exportArchive \
+            -archivePath "$ARCHIVE" \
+            -exportPath "$EXPORT_DIR" \
+            -exportOptionsPlist ios/ExportOptions.plist \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$KEY_DIR/AuthKey_${ASC_KEY_ID}.p8" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+          ls -lh "$EXPORT_DIR"
+
+      # A TestFlight binary can compile and sign while still carrying the
+      # wrong APNs environment. Inspect the actual exported application—not
+      # the source entitlement—before upload so a sandbox push build never
+      # reaches testers.
+      - name: Verify production push signing
+        run: |
+          IPA=$(find "$EXPORT_DIR" -name "*.ipa" | head -1)
+          VERIFY_DIR=$(mktemp -d)
+          trap 'rm -rf "$VERIFY_DIR"' EXIT
+          unzip -q "$IPA" -d "$VERIFY_DIR"
+          APP=$(find "$VERIFY_DIR/Payload" -maxdepth 1 -name "*.app" | head -1)
+          codesign -d --entitlements :- "$APP" > "$VERIFY_DIR/entitlements.plist" 2>/dev/null
+          security cms -D -i "$APP/embedded.mobileprovision" > "$VERIFY_DIR/profile.plist"
+          APP_ENV=$(plutil -extract aps-environment raw "$VERIFY_DIR/entitlements.plist" 2>/dev/null || true)
+          PROFILE_ENV=$(plutil -extract Entitlements.aps-environment raw "$VERIFY_DIR/profile.plist" 2>/dev/null || true)
+          if [ "$APP_ENV" != "production" ] || [ "$PROFILE_ENV" != "production" ]; then
+            echo "::error::Exported push environment is not production (app=$APP_ENV profile=$PROFILE_ENV)"
+            exit 1
+          fi
+          echo "Exported app and provisioning profile both use production APNs."
+
+      # altool is deprecated and currently broken against Xcode 26, so the
+      # upload goes through fastlane's pilot.
+      - name: Upload to TestFlight
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8_BASE64: ${{ secrets.ASC_KEY_P8_BASE64 }}
+          CHANGELOG: ${{ inputs.changelog }}
+        run: |
+          IPA=$(find "$EXPORT_DIR" -name "*.ipa" | head -1)
+          if [ -z "$IPA" ]; then echo "::error::No .ipa produced"; exit 1; fi
+          echo "Uploading $IPA"
+
+          # fastlane takes the key as a JSON file. Generated by a script rather
+          # than inline so the PEM's newline escaping is handled by json.dump
+          # and the whole thing can be tested off-CI.
+          trap 'rm -f asc_api_key.json' EXIT
+          python3 ios/scripts/make-asc-key-json.py asc_api_key.json
+
+          fastlane run upload_to_testflight \
+            api_key_path:asc_api_key.json \
+            ipa:"$IPA" \
+            skip_waiting_for_build_processing:true \
+            skip_submission:true \
+            changelog:"$CHANGELOG"
+
+      - name: Remove the API key
+        if: always()
+        run: rm -rf "$KEY_DIR"
