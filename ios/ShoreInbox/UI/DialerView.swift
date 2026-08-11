@@ -14,10 +14,17 @@ struct DialerView: View {
         ["*", "0", "#"]
     ]
 
+    /// Sub-labels under each digit, matching the system dialler — including the
+    /// "+" under 0, which is what makes the long-press discoverable.
     private let letters: [String: String] = [
         "2": "ABC", "3": "DEF", "4": "GHI", "5": "JKL",
-        "6": "MNO", "7": "PQRS", "8": "TUV", "9": "WXYZ"
+        "6": "MNO", "7": "PQRS", "8": "TUV", "9": "WXYZ",
+        "0": "+"
     ]
+
+    /// Set when a long press has already inserted its value, so the tap that
+    /// arrives on release does not also insert the digit.
+    @State private var longPressInserted = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -97,20 +104,43 @@ struct DialerView: View {
     }
 
     private func keypadButton(_ key: String) -> some View {
-        Button {
+        // 0 is the only key with a long-press action, which mirrors the system
+        // dialler: the letters under the other digits are labels for reading a
+        // number aloud, not alternative input. Holding 4 does not type "G" on
+        // an iPhone either.
+        let longPressValue: String? = (key == "0") ? "+" : nil
+
+        // Not a Button: a Button's own tap handling competes with the long
+        // press and fires both on release.
+        return VStack(spacing: 2) {
+            Text(key).font(.system(size: 32, weight: .regular))
+            if let sub = letters[key] {
+                Text(sub)
+                    .font(.system(size: key == "0" ? 15 : 10, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(width: 72, height: 72)
+        .background(Circle().fill(Color.secondary.opacity(0.12)))
+        .foregroundStyle(.primary)
+        .contentShape(Circle())
+        .onLongPressGesture(minimumDuration: 0.35) {
+            guard let value = longPressValue else { return }
+            longPressInserted = true
+            number.append(value)
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        } onPressingChanged: { isPressing in
+            if isPressing { longPressInserted = false }
+        }
+        .onTapGesture {
+            // Swallow the release that follows a long press we already handled.
+            guard !longPressInserted else { longPressInserted = false; return }
             number.append(key)
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
-        } label: {
-            VStack(spacing: 2) {
-                Text(key).font(.system(size: 32, weight: .regular))
-                if let sub = letters[key] {
-                    Text(sub).font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
-                }
-            }
-            .frame(width: 72, height: 72)
-            .background(Circle().fill(Color.secondary.opacity(0.12)))
-            .foregroundStyle(.primary)
         }
+        .accessibilityElement()
+        .accessibilityLabel(key == "0" ? "0, hold for plus" : key)
+        .accessibilityAddTraits(.isButton)
     }
 
     private func placeCall() {

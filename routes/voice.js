@@ -20,6 +20,19 @@ router.get('/token', async (req, res) => {
     // URL cache. The iOS app keeps the current value securely in Keychain.
     res.set('Cache-Control', 'no-store');
     const credentials = getIOSVoiceCredentials();
+
+    // Serving blank credentials is worse than serving none: the app registers
+    // with an empty SIP user and reports "Connection failed", which looks like
+    // a network fault rather than unset configuration. Say what is actually
+    // wrong instead.
+    if (!credentials.login || !credentials.password) {
+      console.error('[VOICE] SIP credentials are not configured — set TELNYX_IOS_SIP_USERNAME and TELNYX_IOS_SIP_PASSWORD');
+      return res.status(503).json({
+        error: 'Calling is not configured on the server yet.',
+        code: 'sip_credentials_missing'
+      });
+    }
+
     res.json({
       login: credentials.login,
       password: credentials.password,

@@ -58,6 +58,9 @@ final class TelnyxVoiceManager: NSObject {
     /// rotate away from a retired/web-exposed SIP user without needlessly
     /// reconnecting when the backend value is unchanged.
     private var connectedCredentials: SIPCredentials?
+    /// True when the backend has no SIP credentials configured, as opposed to
+    /// the request simply failing. Drives a more useful status message.
+    private var serverHasNoCallingCredentials = false
 
     /// Ends the CallKit UI if a push-woken call never produces a real INVITE.
     private var pushCallWatchdog: DispatchWorkItem?
@@ -195,7 +198,11 @@ final class TelnyxVoiceManager: NSObject {
     @discardableResult
     func connectIfPossible(force: Bool = false) async -> Bool {
         guard let creds = await resolveCredentials() else {
-            setStatus("Not signed in", ready: false)
+            // Distinguish "the server has no SIP credentials" from "you are not
+            // signed in". They need completely different fixes, and the second
+            // message sends you hunting the wrong problem.
+            setStatus(serverHasNoCallingCredentials ? "Calling not set up on the server"
+                                                    : "Not signed in", ready: false)
             return false
         }
 
@@ -301,10 +308,24 @@ final class TelnyxVoiceManager: NSObject {
         // Foreground connections must observe a backend credential rotation.
         // Push-woken launches do not use this method; startSDKForPush reads the
         // Keychain synchronously so CallKit can be reported immediately.
-        if let fresh = try? await APIClient.shared.fetchSIPCredentials(allowCachedFallback: false) {
+        do {
+            let fresh = try await APIClient.shared.fetchSIPCredentials(allowCachedFallback: false)
+            // A blank pair means the server has no SIP credentials set. Feeding
+            // those to the SDK produces a registration failure that reads as a
+            // network fault, so treat it as unconfigured instead.
+            if fresh.login.isEmpty || fresh.password.isEmpty {
+                serverHasNoCallingCredentials = true
+                return nil
+            }
+            serverHasNoCallingCredentials = false
             return fresh
+        } catch APIError.server(let message) {
+            // The backend answers 503 with this once TELNYX_IOS_SIP_* are unset.
+            serverHasNoCallingCredentials = message.localizedCaseInsensitiveContains("not configured")
+            return CredentialStore.cachedSIPCredentials
+        } catch {
+            return CredentialStore.cachedSIPCredentials
         }
-        return CredentialStore.cachedSIPCredentials
     }
 
     private func makeTxConfig(creds: SIPCredentials) -> TxConfig {
