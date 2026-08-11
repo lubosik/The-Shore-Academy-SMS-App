@@ -8,18 +8,16 @@ enum AppConfig {
     /// Base URL of the Shore Academy inbox backend (Railway).
     /// Override at runtime with the `SHORE_SERVER_URL` env var when debugging.
     ///
-    /// ⚠️ PLACEHOLDER — THE REAL BACKEND URL DOES NOT EXIST YET. ⚠️
-    /// The Shore Academy Railway deployment has not been created. Replace
-    /// `https://REPLACE-WITH-RAILWAY-URL` with the real generated Railway URL
-    /// before shipping any build. Do NOT guess a URL: a wrong value produces a
-    /// silent login failure ("Wrong password, or the session expired" /
-    /// transport errors) that is very hard to diagnose in the field.
+    /// Verified against the running deployment, not guessed — a wrong value here
+    /// produces a silent login failure ("Wrong password, or the session
+    /// expired") that is very hard to diagnose in the field. If Railway ever
+    /// regenerates the domain, this must be updated and the app rebuilt.
     static let serverURL: URL = {
         if let raw = ProcessInfo.processInfo.environment["SHORE_SERVER_URL"],
            let url = URL(string: raw) {
             return url
         }
-        return URL(string: "https://REPLACE-WITH-RAILWAY-URL")!
+        return URL(string: "https://web-production-6fd6a.up.railway.app")!
     }()
 
     /// Telnyx push environment must match how the binary was signed:
