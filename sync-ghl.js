@@ -26,7 +26,7 @@
 require('dotenv').config();
 
 const { supabase } = require('./db');
-const { searchConversations, getConversationMessages, sleep, PAGE_PAUSE_MS } = require('./lib/ghl-client');
+const { searchConversations, getConversationMessages, forEachContactPage, sleep, PAGE_PAUSE_MS } = require('./lib/ghl-client');
 const { upsertGhlContact } = require('./lib/ghl-contact-store');
 const { storeGhlMessage } = require('./lib/ghl-message-store');
 const { sendNativeMessagePush } = require('./lib/apns-notify');
@@ -85,20 +85,31 @@ async function writeWatermark(ms) {
   if (error) console.warn('[GHL-SYNC] Could not save watermark:', error.message);
 }
 
-/** Shape a GHL conversation into the contact record the store expects. */
-function contactFromConversation(conv) {
-  const full = (conv.contactName || conv.fullName || '').trim();
-  const space = full.indexOf(' ');
+/**
+ * Shape a GHL contact record into what the store expects.
+ *
+ * Contacts are read from /contacts/search rather than derived from
+ * conversations. A conversation only exists once GHL has actually messaged
+ * someone, so a lead whose workflow merely tags them, assigns a task, or is
+ * paused would have no conversation and would never reach the app. Reading
+ * contacts directly makes coverage a guarantee instead of a side effect of
+ * how each workflow happens to be built — which matters here, because ads run
+ * across several areas with a different workflow behind each.
+ *
+ * It also carries fields a conversation does not: `source` is the real origin
+ * ("Miami Beach Landing Page"), which tells Dominic which ad produced the lead.
+ */
+function normaliseGhlContact(c) {
   return {
-    ghlId:     conv.contactId,
-    firstName: space > 0 ? full.slice(0, space) : (full || null),
-    lastName:  space > 0 ? full.slice(space + 1) : null,
-    email:     conv.email || null,
-    phone:     conv.phone || null,
-    tags:      Array.isArray(conv.tags) ? conv.tags : [],
-    dateAdded: conv.dateAdded ? new Date(conv.dateAdded).toISOString() : null,
-    country:   null,
-    source:    null
+    ghlId:     c.id,
+    firstName: c.firstName || null,
+    lastName:  c.lastName || null,
+    email:     c.email || null,
+    phone:     c.phone || null,
+    tags:      Array.isArray(c.tags) ? c.tags : [],
+    dateAdded: c.dateAdded || null,
+    country:   c.country || null,
+    source:    c.source || null
   };
 }
 
@@ -120,7 +131,7 @@ async function syncFromGhl({ full = false, quiet = false } = {}) {
   }
 
   const stats = {
-    conversations: 0, scanned: 0, contactsAdded: 0, contactsUpdated: 0,
+    conversations: 0, scanned: 0, contactsSeen: 0, contactsAdded: 0, contactsUpdated: 0,
     messagesAdded: 0, messagesLinked: 0, errors: 0
   };
 
@@ -138,25 +149,22 @@ async function syncFromGhl({ full = false, quiet = false } = {}) {
   const isBackfill = full || watermark === null;
   if (isBackfill) console.log('[GHL-SYNC] Backfill pass — importing contacts without notifying.');
 
-  const { conversations } = await searchConversations({ locationId });
-  stats.conversations = conversations.length;
-
-  for (const conv of conversations) {
-    const lastMessageMs = Number(conv.lastMessageDate) || 0;
-    if (lastMessageMs > highWater) highWater = lastMessageMs;
-
-    // Contacts are reconciled for every conversation, not just active ones —
-    // a lead can exist in GHL with no message yet, and should still show up.
-    if (conv.phone) {
+  // ── Contacts ────────────────────────────────────────────────────────────
+  // Every contact in the location, regardless of whether GHL has messaged them
+  // yet. This is what makes "any lead, from any workflow, reaches the app" a
+  // guarantee rather than something that happens to be true today.
+  await forEachContactPage(locationId, async (page) => {
+    for (const raw of page) {
+      if (!raw.phone) continue;
+      stats.contactsSeen++;
       try {
-        const { action, phone } = await upsertGhlContact(contactFromConversation(conv), 'ghl-sync');
+        const { action, phone } = await upsertGhlContact(normaliseGhlContact(raw), 'ghl-sync');
         if (action === 'inserted') {
           stats.contactsAdded++;
-          const name = (conv.contactName || conv.fullName || '').trim() || phone;
-          broadcast({ type: 'contact_added', phone, name, source: 'ghl-sync' });
-          // Same push the new-contact webhook sends. Only fires on a genuine
-          // insert, so a webhook that already handled this lead wins the race
-          // and nobody is notified twice.
+          const name = [raw.firstName, raw.lastName].filter(Boolean).join(' ').trim() || phone;
+          broadcast({ type: 'contact_added', phone, name, source: raw.source || 'ghl-sync' });
+          // Only fires on a genuine insert, so the new-contact webhook winning
+          // the race means nobody is notified twice.
           if (!isBackfill) {
             try {
               await sendNativeMessagePush({
@@ -173,9 +181,18 @@ async function syncFromGhl({ full = false, quiet = false } = {}) {
         }
       } catch (err) {
         stats.errors++;
-        console.error(`[GHL-SYNC] Contact ${conv.contactId} failed:`, err.message);
+        console.error(`[GHL-SYNC] Contact ${raw.id} failed:`, err.message);
       }
     }
+  });
+
+  // ── Messages ────────────────────────────────────────────────────────────
+  const { conversations } = await searchConversations({ locationId });
+  stats.conversations = conversations.length;
+
+  for (const conv of conversations) {
+    const lastMessageMs = Number(conv.lastMessageDate) || 0;
+    if (lastMessageMs > highWater) highWater = lastMessageMs;
 
     // Only pull messages for threads that have moved since we last looked.
     if (!full && lastMessageMs && lastMessageMs < since) continue;
@@ -217,7 +234,7 @@ async function syncFromGhl({ full = false, quiet = false } = {}) {
   const changed = stats.contactsAdded || stats.messagesAdded || stats.contactsUpdated || stats.errors;
   if (!quiet || changed) {
     console.log(
-      `[GHL-SYNC] ${stats.conversations} conversations, ${stats.scanned} scanned | ` +
+      `[GHL-SYNC] ${stats.contactsSeen} contacts, ${stats.conversations} conversations, ${stats.scanned} scanned | ` +
       `contacts +${stats.contactsAdded}/~${stats.contactsUpdated} | ` +
       `messages +${stats.messagesAdded}/linked ${stats.messagesLinked} | errors ${stats.errors}`
     );
