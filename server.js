@@ -74,6 +74,8 @@ const sendLimiter = rateLimit({
 app.use('/webhook', require('./routes/webhook')(broadcastSSE));
 // GHL workflow "new contact" webhook — secret lives in the URL path
 app.use('/webhook', express.json(), require('./routes/webhook-ghl-contact')(broadcastSSE));
+// GHL workflow "message sent" webhook — records what GHL just sent. Never sends.
+app.use('/webhook', express.json(), require('./routes/webhook-ghl-message')(broadcastSSE));
 // GHL workflow "send SMS" webhook — secret via header/body/query
 app.use('/webhook', express.json(), require('./routes/webhook-send')(broadcastSSE));
 

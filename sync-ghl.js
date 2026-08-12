@@ -217,13 +217,19 @@ async function syncFromGhl({ full = false, quiet = false } = {}) {
 }
 
 /**
- * Start the background poll.
+ * Start the background reconciliation pass.
  *
- * Two minutes is a compromise: the new-contact webhook already delivers leads
- * instantly, so this only needs to be quick enough that a GHL-sent message
- * shows up before anyone goes looking for it.
+ * The two GHL workflow webhooks are the fast path and deliver in real time.
+ * This exists to catch what they cannot: a workflow nobody wired a webhook
+ * onto, a webhook that failed while the app was redeploying, or a reply typed
+ * by hand inside GHL, which fires no workflow at all.
+ *
+ * Fifteen minutes because it is a backstop, not the primary path. That is
+ * ~100 GHL calls a day against a published ceiling of 200,000, so the cost is
+ * immaterial either way — the reason not to poll faster is that the webhooks
+ * already did the job, not the quota.
  */
-function startGhlSync(intervalMs = 2 * 60 * 1000) {
+function startGhlSync(intervalMs = 15 * 60 * 1000) {
   if (!process.env.GHL_PIT || !process.env.GHL_LOCATION_ID) {
     console.log('[GHL-SYNC] Disabled — GHL_PIT / GHL_LOCATION_ID not set.');
     return;
