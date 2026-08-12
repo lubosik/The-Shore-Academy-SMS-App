@@ -152,8 +152,8 @@ async function syncFromGhl({ full = false, quiet = false } = {}) {
           // and nobody is notified twice.
           try {
             await sendNativeMessagePush({
-              title: 'New contact',
-              body: `${name} just opted in. Say hi or give them a ring.`,
+              title: 'New Shore Academy contact 👋',
+              body: `${name} just came in — go say hi.`,
               phone
             });
           } catch (pushErr) {

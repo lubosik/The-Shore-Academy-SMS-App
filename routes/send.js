@@ -2,6 +2,7 @@ const { supabase, insertSmsMessage } = require('../db');
 const { sendSMS } = require('../telnyx');
 const { formatPhone, isOptedOut } = require('../lib/compliance');
 const { normaliseTelnyxStatus } = require('../lib/message-status');
+const { recordOutboundInGhl } = require('../lib/ghl-writeback');
 
 module.exports = (broadcastSSE) => {
   const router = require('express').Router();
@@ -52,6 +53,13 @@ module.exports = (broadcastSSE) => {
         phone: normalisedTo,
         last_seen: new Date().toISOString()
       }, { onConflict: 'phone' });
+
+      // Dominic works in the app, not GHL, so without this GHL only ever sees
+      // its own automated sends and thinks every thread is one-sided. Recorded,
+      // never re-sent: this uses /messages/outbound, not /messages, which would
+      // deliver the text a second time.
+      recordOutboundInGhl(normalisedTo, text)
+        .catch(err => console.error('[GHL-WB] outbound:', err.message));
 
       broadcastSSE({
         type: 'new_message',
