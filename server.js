@@ -10,6 +10,7 @@ const helmet  = require('helmet');
 const rateLimit = require('express-rate-limit');
 const path    = require('path');
 const { verifyConnection } = require('./db');
+const { reportVoiceConfig } = require('./lib/voice-preflight');
 require('./push-notify'); // initialises VAPID on startup
 
 const app = express();
@@ -123,6 +124,10 @@ app.listen(PORT, '0.0.0.0', async () => {
   console.log(`Telnyx: ${process.env.TELNYX_PHONE_NUMBER}`);
   console.log(`GHL: ${process.env.GHL_PIT ? 'configured' : 'NOT configured'}`);
   console.log('Automations: none — all marketing automation lives in GoHighLevel');
+
+  // Says whether Telnyx can actually place a call, rather than leaving it to
+  // be discovered by one failing. Advisory: never blocks or crashes startup.
+  reportVoiceConfig();
 });
 
 module.exports = { app, broadcastSSE };
