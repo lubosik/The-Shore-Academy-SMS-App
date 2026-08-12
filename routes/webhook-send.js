@@ -11,7 +11,13 @@ const { formatPhone, isOptedOut } = require('../lib/compliance');
 const { normaliseTelnyxStatus } = require('../lib/message-status');
 
 function isAuthorized(req) {
-  if (!process.env.WEBHOOK_SECRET) return true;
+  // Fail closed. This previously returned true when WEBHOOK_SECRET was unset,
+  // which turns a public endpoint that sends SMS into an open relay the moment
+  // the variable goes missing from the environment.
+  if (!process.env.WEBHOOK_SECRET) {
+    console.error('[GHL-SEND] WEBHOOK_SECRET is not set — refusing to send.');
+    return false;
+  }
   const provided =
     req.get('x-webhook-secret') ||
     req.body?.webhookSecret ||

@@ -7,7 +7,44 @@ const { rehostInboundMedia } = require('../lib/mms-media');
 const { parseTapback, findTapbackTarget } = require('../lib/tapbacks');
 const { normaliseTelnyxStatus, updateMessageStatus } = require('../lib/message-status');
 
+const { findContactByPhone } = require('../lib/ghl-client');
+const { upsertGhlContact } = require('../lib/ghl-contact-store');
+
 const DELIVERY_EVENTS = new Set(['message.sent', 'message.delivered', 'message.finalized']);
+
+/**
+ * Fill in a name for someone who texted in before their GHL contact reached
+ * us. Skipped entirely once the row already has a name, so the common case
+ * costs nothing and GHL is not called on every inbound message.
+ */
+async function enrichContactFromGhl(phone) {
+  const locationId = process.env.GHL_LOCATION_ID;
+  if (!locationId || !process.env.GHL_PIT) return;
+
+  const { data: row } = await supabase
+    .from('sms_contacts')
+    .select('name, ghl_contact_id')
+    .eq('phone', phone)
+    .maybeSingle();
+  if (row?.name && row?.ghl_contact_id) return;
+
+  const contact = await findContactByPhone(locationId, phone);
+  if (!contact) return;
+
+  await upsertGhlContact({
+    ghlId:     contact.id,
+    firstName: contact.firstName || null,
+    lastName:  contact.lastName || null,
+    email:     contact.email || null,
+    phone:     contact.phone || phone,
+    tags:      Array.isArray(contact.tags) ? contact.tags : [],
+    dateAdded: contact.dateAdded || null,
+    country:   contact.country || null,
+    source:    contact.source || null
+  }, 'ghl-inbound-lookup');
+
+  console.log(`[GHL] Named inbound contact ...${phone.slice(-4)} from GHL`);
+}
 
 module.exports = (broadcastSSE) => {
   const router = require('express').Router();
@@ -89,6 +126,13 @@ module.exports = (broadcastSSE) => {
         phone: fromPhone,
         last_seen: new Date().toISOString()
       }, { onConflict: 'phone' });
+
+      // A cold inbound SMS carries no name, so the thread would read as a bare
+      // phone number until the GHL sync next runs. Ask GHL who this is now.
+      // Deliberately never allowed to fail the webhook: a missing name is a
+      // cosmetic problem, a dropped inbound message is not.
+      try { await enrichContactFromGhl(fromPhone); }
+      catch (err) { console.warn('[GHL] Inbound name lookup failed:', err.message); }
 
       // ── iPhone tapback (reaction) detection ─────────────────────────────────
       // "Loved \"...\"" / "Liked an image" etc. arrive as plain SMS text.
