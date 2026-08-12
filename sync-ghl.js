@@ -131,6 +131,13 @@ async function syncFromGhl({ full = false, quiet = false } = {}) {
 
   let highWater = watermark || 0;
 
+  // A first pass, or an explicit --full, is a backfill of history rather than
+  // news. Every contact GHL already has counts as an insert, so notifying on
+  // them would fire one push per existing contact — 24 of them on this account.
+  // Contacts are still created; only the notification is withheld.
+  const isBackfill = full || watermark === null;
+  if (isBackfill) console.log('[GHL-SYNC] Backfill pass — importing contacts without notifying.');
+
   const { conversations } = await searchConversations({ locationId });
   stats.conversations = conversations.length;
 
@@ -150,14 +157,16 @@ async function syncFromGhl({ full = false, quiet = false } = {}) {
           // Same push the new-contact webhook sends. Only fires on a genuine
           // insert, so a webhook that already handled this lead wins the race
           // and nobody is notified twice.
-          try {
-            await sendNativeMessagePush({
-              title: 'New Shore Academy contact 👋',
-              body: `${name} just came in — go say hi.`,
-              phone
-            });
-          } catch (pushErr) {
-            console.error('[GHL-SYNC] Push failed:', pushErr.message);
+          if (!isBackfill) {
+            try {
+              await sendNativeMessagePush({
+                title: 'New Shore Academy contact 👋',
+                body: `${name} just came in — go say hi.`,
+                phone
+              });
+            } catch (pushErr) {
+              console.error('[GHL-SYNC] Push failed:', pushErr.message);
+            }
           }
         } else if (action === 'updated') {
           stats.contactsUpdated++;
