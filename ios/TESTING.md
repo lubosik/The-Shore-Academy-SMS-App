@@ -148,6 +148,37 @@ Settings notification status first, then the authenticated
 device row must say `production`; `sandbox` is only for a locally installed
 Debug build.
 
+## Test 10 — MMS send, receive, view, and save
+
+Run these checks on a TestFlight build and a physical iPhone. Before testing,
+confirm the Shore Supabase project has a publicly readable `mms-media` bucket;
+Telnyx must be able to fetch every outbound media URL without authentication.
+
+1. In a conversation, select one recent camera photo. A thumbnail and remove
+   button should appear before sending.
+2. Send it with no caption, then repeat with a caption. Both messages must
+   appear in the same thread and progress beyond **Queued**.
+3. Select four high-resolution photos and send them together. The app should
+   finish preparing them without freezing, and Telnyx must not report media
+   error `40317` (total media too large).
+4. Remove the second of several selected photos, reopen the picker, and confirm
+   the removed photo is no longer selected. Send the remaining selection.
+5. Have a phone send an image-only MMS and an image plus caption to the Shore
+   number. Both must appear in the existing contact's exact thread.
+6. Tap each received image. It should open full-screen. Tap **Save**, grant the
+   add-only Photos permission, and confirm **Saved to Photos** and the new item
+   in the Photos app.
+7. Disable Shore Academy's Photos permission in Settings and retry Save. The
+   app should explain how to restore access rather than silently failing.
+8. Temporarily test a broken attachment URL in a fixture build. The bubble must
+   show **Image couldn't be downloaded** and a working **Try Again** action.
+
+Telnyx's current MMS documentation says media URLs must be public, individual
+files must remain below 1 MB, and the safest total across US carriers is below
+600 KB. The native composer therefore distributes a 580 KB total envelope
+across its selected images instead of allowing every image to approach 1 MB.
+See <https://developers.telnyx.com/docs/messaging/messages/mms-transcoding>.
+
 ## Reading logs from a terminated app
 
 The cold-launch path cannot be debugged with the Xcode console, because the app

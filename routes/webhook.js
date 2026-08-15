@@ -119,6 +119,9 @@ module.exports = (broadcastSSE) => {
           status: 'delivered',
           created_at: payload.received_at || new Date().toISOString()
         }).catch(() => {});
+        // Keep the compliance keyword visible in the same GHL thread before
+        // setting DND, so staff can see why the contact was suppressed.
+        await recordInboundInGhl(fromPhone, text);
         // GHL sends through its own bridge and never asks us about opt-outs,
         // so recording this locally is not enough — DND must be set on the
         // contact or its workflows keep texting someone who said STOP.
@@ -139,13 +142,6 @@ module.exports = (broadcastSSE) => {
       // cosmetic problem, a dropped inbound message is not.
       try { await enrichContactFromGhl(fromPhone); }
       catch (err) { console.warn('[GHL] Inbound name lookup failed:', err.message); }
-
-      // GHL has never seen a single reply — it sends but does not receive, so
-      // every workflow branch asking "did they reply?" is permanently false.
-      // Recording it there is what makes those branches behave correctly, and
-      // it needs no per-workflow configuration to do so.
-      recordInboundInGhl(fromPhone, text)
-        .catch(err => console.error('[GHL-WB] inbound:', err.message));
 
       // ── iPhone tapback (reaction) detection ─────────────────────────────────
       // "Loved \"...\"" / "Liked an image" etc. arrive as plain SMS text.
@@ -196,6 +192,9 @@ module.exports = (broadcastSSE) => {
               phone: fromPhone
             }).catch(err => console.error('APNs tapback error:', err.message));
 
+            recordInboundInGhl(fromPhone, text)
+              .catch(err => console.error('[GHL-WB] inbound tapback:', err.message));
+
             console.log(`[TAPBACK] ${tapback.action} ${tapback.type} on msg ${target.id} from ...${fromPhone.slice(-4)}`);
             return;
           }
@@ -211,6 +210,12 @@ module.exports = (broadcastSSE) => {
         const hosted = await rehostInboundMedia(messageId, inboundMedia);
         if (hosted.length > 0) mediaRecord = hosted;
       }
+
+      // Re-host first, then write to GHL. That keeps GHL's exact conversation
+      // complete for image-only MMS and avoids recording Telnyx's expiring
+      // media URL when a durable Shore URL is available.
+      recordInboundInGhl(fromPhone, text, mediaRecord || [])
+        .catch(err => console.error('[GHL-WB] inbound:', err.message));
 
       let insertedRow = null;
       try {

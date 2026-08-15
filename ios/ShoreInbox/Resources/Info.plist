@@ -41,6 +41,10 @@
 	<string>Shore Academy uses the camera when you choose to enable video during a call.</string>
 	<key>NSContactsUsageDescription</key>
 	<string>Shore Academy can show client names on incoming calls.</string>
+	<!-- PhotosPicker does not require library access. This add-only permission is
+	     requested only when a user explicitly saves a received message image. -->
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Shore Academy saves message images to your Photos library when you tap Save.</string>
 
 	<key>UILaunchScreen</key>
 	<dict>

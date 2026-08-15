@@ -57,9 +57,16 @@ final class InboxModel: ObservableObject {
         defer { isSending = false }
         do {
             var urls: [String] = []
-            for original in imageData.prefix(4) {
+            let selectedImages = Array(imageData.prefix(4))
+            // Telnyx allows each file below 1 MB and the combined payload below
+            // 2 MB, but recommends staying below 600 KB for delivery across
+            // every US carrier/sender type. Divide
+            // that safe envelope across the selected attachments rather than
+            // independently producing several near-1 MB files.
+            let perImageBudget = 580_000 / max(1, selectedImages.count)
+            for original in selectedImages {
                 guard let image = UIImage(data: original),
-                      let compressed = Self.carrierSafeJPEG(image) else {
+                      let compressed = Self.carrierSafeJPEG(image, maximumBytes: perImageBudget) else {
                     throw APIError.server("One of the selected images could not be prepared.")
                 }
                 urls.append(try await APIClient.shared.uploadJPEG(compressed))
@@ -90,16 +97,35 @@ final class InboxModel: ObservableObject {
         }
     }
 
-    private static func carrierSafeJPEG(_ image: UIImage) -> Data? {
-        let maximumDimension: CGFloat = 1600
-        let scale = min(1, maximumDimension / max(image.size.width, image.size.height))
-        let size = CGSize(width: max(1, image.size.width * scale), height: max(1, image.size.height * scale))
-        let renderer = UIGraphicsImageRenderer(size: size)
-        let resized = renderer.image { _ in image.draw(in: CGRect(origin: .zero, size: size)) }
-        for quality in stride(from: 0.82, through: 0.25, by: -0.1) {
-            if let data = resized.jpegData(compressionQuality: quality), data.count <= 900_000 { return data }
+    /// Produces an upload that is guaranteed to fit the backend's 1 MB hard
+    /// limit. Merely lowering JPEG quality is not enough for large/noisy camera
+    /// photos: the old implementation could still return more than 1 MB and
+    /// every such selection failed later at `/api/upload` with HTTP 413.
+    static func carrierSafeJPEG(_ image: UIImage, maximumBytes: Int = 850_000) -> Data? {
+        guard image.size.width > 0, image.size.height > 0, maximumBytes > 0 else { return nil }
+
+        for maximumDimension: CGFloat in [1600, 1280, 1024, 800, 640, 480, 320] {
+            let scale = min(1, maximumDimension / max(image.size.width, image.size.height))
+            let size = CGSize(width: max(1, image.size.width * scale),
+                              height: max(1, image.size.height * scale))
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = 1
+            format.opaque = true
+            let renderer = UIGraphicsImageRenderer(size: size, format: format)
+            let resized = renderer.image { context in
+                UIColor.white.setFill()
+                context.fill(CGRect(origin: .zero, size: size))
+                image.draw(in: CGRect(origin: .zero, size: size))
+            }
+
+            for quality: CGFloat in [0.82, 0.72, 0.62, 0.52, 0.42, 0.32, 0.24] {
+                if let data = resized.jpegData(compressionQuality: quality),
+                   data.count <= maximumBytes {
+                    return data
+                }
+            }
         }
-        return resized.jpegData(compressionQuality: 0.2)
+        return nil
     }
 }
 

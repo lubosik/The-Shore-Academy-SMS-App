@@ -15,6 +15,7 @@ const { supabase, insertSmsMessage } = require('../db');
 const { sendSMS } = require('../telnyx');
 const { isOptedOut } = require('../lib/compliance');
 const { normaliseTelnyxStatus } = require('../lib/message-status');
+const { recordOutboundInGhl, sendOutboundViaGhl } = require('../lib/ghl-writeback');
 
 const VERBS = {
   loved:      { add: 'Loved',      remove: 'Removed a heart from' },
@@ -55,7 +56,18 @@ module.exports = (broadcastSSE) => {
         ? `${verb} “${target.body.trim()}”`
         : `${verb} an image`;
 
-      const { messageId: telnyxId, status: providerStatus } = await sendSMS(target.contact_phone, text);
+      const throughGhl = String(process.env.GHL_OUTBOUND_MODE || 'ghl').toLowerCase() !== 'telnyx';
+      const provider = throughGhl
+        ? await sendOutboundViaGhl(target.contact_phone, text)
+        : await sendSMS(target.contact_phone, text);
+      if (provider?.skipped || !provider?.messageId) {
+        throw new Error(`Messaging provider unavailable: ${provider?.skipped || 'missing message id'}`);
+      }
+      const providerId = provider.messageId;
+      if (!throughGhl) {
+        recordOutboundInGhl(target.contact_phone, text)
+          .catch(err => console.error('[GHL-WB] tapback:', err.message));
+      }
 
       const reactions = removing
         ? existing.filter(r => !(r.type === type && r.source === 'operator'))
@@ -68,12 +80,14 @@ module.exports = (broadcastSSE) => {
 
       // Store the outbound tapback row (hidden by the UI via reply_to_message_id)
       await insertSmsMessage({
-        telnyx_message_id: telnyxId,
+        telnyx_message_id: throughGhl ? null : providerId,
+        ghl_message_id: throughGhl ? providerId : null,
         contact_phone: target.contact_phone,
         direction: 'outbound',
         body: text,
-        status: normaliseTelnyxStatus(providerStatus),
-        reply_to_message_id: target.id
+        status: normaliseTelnyxStatus(provider.status),
+        reply_to_message_id: target.id,
+        source: throughGhl ? 'ghl-send' : 'app'
       }).catch(() => {});
 
       broadcastSSE({

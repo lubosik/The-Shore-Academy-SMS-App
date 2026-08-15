@@ -7,6 +7,7 @@
  * mocked at the seam:
  *   - fetch to api.telnyx.com  → captured + faked (NO real SMS can be sent)
  *   - push-notify module       → no-op stub
+ *   - GHL integration          → disabled for this process
  * Everything else (Supabase DB + Storage, express routing, body parsing) is real.
  *
  * Cleans up every row + storage object it creates.
@@ -14,6 +15,13 @@
  */
 
 require('dotenv').config();
+
+// This suite exercises the app's direct Telnyx rollback path with Telnyx
+// intercepted below. Disable GHL for this process as well: the test must never
+// create a real GHL conversation/message or depend on live vendor credentials.
+process.env.GHL_OUTBOUND_MODE = 'telnyx';
+delete process.env.GHL_PIT;
+delete process.env.GHL_LOCATION_ID;
 
 const TEST_PHONE = '+15005550123'; // reserved-style fake number, never a customer
 const PORT = 3199;
@@ -23,6 +31,11 @@ const pushPath = require.resolve('../push-notify.js');
 require.cache[pushPath] = {
   id: pushPath, filename: pushPath, loaded: true,
   exports: { sendPushToAll: async () => {} }
+};
+const apnsPath = require.resolve('../lib/apns-notify.js');
+require.cache[apnsPath] = {
+  id: apnsPath, filename: apnsPath, loaded: true,
+  exports: { sendNativeMessagePush: async () => ({ sent: 0, failed: 0 }) }
 };
 
 // Intercept ONLY Telnyx API calls; pass everything else (Supabase) through

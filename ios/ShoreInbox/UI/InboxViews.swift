@@ -133,6 +133,9 @@ struct MessageThreadView: View {
     @State private var replyTarget: MessageRecord?
     @State private var pickerItems: [PhotosPickerItem] = []
     @State private var imageData: [Data] = []
+    @State private var isPreparingImages = false
+    @State private var pickerError: String?
+    @State private var pickerLoadTask: Task<Void, Never>?
     @State private var didInitialScroll = false
 
     private var messages: [MessageRecord] { model.messages[conversation.phone] ?? [] }
@@ -183,7 +186,7 @@ struct MessageThreadView: View {
                             if let image = UIImage(data: data) {
                                 ZStack(alignment: .topTrailing) {
                                     Image(uiImage: image).resizable().scaledToFill().frame(width: 64, height: 64).clipped().cornerRadius(8)
-                                    Button { imageData.remove(at: index) } label: {
+                                    Button { removeImage(at: index) } label: {
                                         Image(systemName: "xmark.circle.fill").symbolRenderingMode(.palette)
                                             .foregroundStyle(.white, .black.opacity(0.7))
                                     }.offset(x: 5, y: -5)
@@ -195,7 +198,11 @@ struct MessageThreadView: View {
             }
             HStack(alignment: .bottom, spacing: 10) {
                 PhotosPicker(selection: $pickerItems, maxSelectionCount: 4, matching: .images) {
-                    Image(systemName: "photo").font(.title3)
+                    if isPreparingImages {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Image(systemName: "photo").font(.title3)
+                    }
                 }
                 .disabled(model.isSending)
                 TextField("Message", text: $draft, axis: .vertical)
@@ -204,7 +211,7 @@ struct MessageThreadView: View {
                     if model.isSending { ProgressView().controlSize(.small) }
                     else { Image(systemName: "arrow.up.circle.fill").font(.title).foregroundColor(ShoreTheme.tint) }
                 }
-                .disabled(model.isSending || (draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && imageData.isEmpty))
+                .disabled(model.isSending || isPreparingImages || (draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && imageData.isEmpty))
             }
             .padding(.horizontal).padding(.vertical, 10)
         }
@@ -217,13 +224,19 @@ struct MessageThreadView: View {
             }
         }
         .onChange(of: pickerItems) { items in
-            Task {
-                var loaded: [Data] = []
-                for item in items {
-                    if let data = try? await item.loadTransferable(type: Data.self) { loaded.append(data) }
-                }
-                imageData = loaded
-            }
+            prepareSelectedImages(items)
+        }
+        .onDisappear {
+            pickerLoadTask?.cancel()
+            isPreparingImages = false
+        }
+        .alert("Couldn’t add photo", isPresented: Binding(
+            get: { pickerError != nil },
+            set: { if !$0 { pickerError = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(pickerError ?? "Please choose the photo again.")
         }
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
@@ -254,12 +267,59 @@ struct MessageThreadView: View {
             }
         }
     }
+
+    private func removeImage(at index: Int) {
+        guard imageData.indices.contains(index) else { return }
+        imageData.remove(at: index)
+        if pickerItems.indices.contains(index) {
+            pickerItems.remove(at: index)
+        }
+    }
+
+    private func prepareSelectedImages(_ items: [PhotosPickerItem]) {
+        pickerLoadTask?.cancel()
+        guard !items.isEmpty else {
+            imageData = []
+            isPreparingImages = false
+            return
+        }
+
+        isPreparingImages = true
+        pickerLoadTask = Task {
+            var loaded: [Data] = []
+            var failedCount = 0
+            for item in items.prefix(4) {
+                guard !Task.isCancelled else { return }
+                do {
+                    guard let data = try await item.loadTransferable(type: Data.self),
+                          UIImage(data: data) != nil else {
+                        failedCount += 1
+                        continue
+                    }
+                    loaded.append(data)
+                } catch is CancellationError {
+                    return
+                } catch {
+                    failedCount += 1
+                }
+            }
+            guard !Task.isCancelled else { return }
+            imageData = loaded
+            isPreparingImages = false
+            if failedCount > 0 {
+                pickerError = failedCount == 1
+                    ? "One selected photo couldn’t be prepared. Please choose it again."
+                    : "\(failedCount) selected photos couldn’t be prepared. Please choose them again."
+            }
+        }
+    }
 }
 
 private struct MessageBubble: View {
     let message: MessageRecord
     let reply: () -> Void
     let react: (String) -> Void
+    @State private var openImage: MessageImageResource?
 
     var body: some View {
         HStack {
@@ -267,12 +327,9 @@ private struct MessageBubble: View {
             VStack(alignment: message.isInbound ? .leading : .trailing, spacing: 5) {
                 ForEach(message.mediaURLs ?? []) { media in
                     if let url = URL(string: media.url) {
-                        AsyncImage(url: url) { phase in
-                            if let image = phase.image { image.resizable().scaledToFill() }
-                            else if phase.error != nil { Image(systemName: "photo.badge.exclamationmark") }
-                            else { ProgressView() }
+                        RemoteMessageImage(url: url) { resource in
+                            openImage = resource
                         }
-                        .frame(maxWidth: 240, minHeight: 100, maxHeight: 260).clipped().cornerRadius(12)
                     }
                 }
                 if let body = message.body, !body.isEmpty {
@@ -312,6 +369,9 @@ private struct MessageBubble: View {
                 }
             }
             if message.isInbound { Spacer(minLength: 54) }
+        }
+        .sheet(item: $openImage) { resource in
+            MessageImageViewer(resource: resource)
         }
     }
 

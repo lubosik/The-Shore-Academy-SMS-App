@@ -22,7 +22,14 @@ async function sendSMS(to, message, mediaUrls = null) {
     body: JSON.stringify(body)
   });
   const data = await response.json();
-  if (!response.ok) throw new Error(data?.errors?.[0]?.detail || 'Telnyx send failed');
+  if (!response.ok) {
+    const error = new Error(data?.errors?.[0]?.detail || 'Telnyx send failed');
+    // An HTTP error proves Telnyx rejected the request, so retrying the stable
+    // GHL provider message cannot duplicate a previously accepted send. A
+    // network exception remains ambiguous and deliberately has no such flag.
+    error.retrySafe = true;
+    throw error;
+  }
   return { messageId: data.data.id, status: data.data.to?.[0]?.status };
 }
 

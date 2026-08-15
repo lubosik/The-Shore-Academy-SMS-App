@@ -21,6 +21,15 @@ inbox on one Telnyx number (+15613630929).
   (`routes/webhook-ghl-contact.js` at `POST /webhook/ghl/contact/:secret`).
   The GHL API client is `lib/ghl-client.js`. Shared upsert rules live in
   `lib/ghl-contact-store.js` — change them there, not in callers.
+- Shore app one-off messages use GHL as the single canonical sender by default
+  (`GHL_OUTBOUND_MODE=ghl`): GHL creates the message in the exact contact
+  conversation, then its configured Telnyx provider delivers it. Never add a
+  second direct Telnyx send to that path. `GHL_OUTBOUND_MODE=telnyx` is an
+  emergency rollback and only mirrors outbound rows when a real Marketplace
+  `GHL_CONVERSATION_PROVIDER_ID` is available.
+- Manual GHL sends are mirrored into the app by `sync-ghl.js` every 60 seconds.
+  A true real-time fast path requires an installed Marketplace/OAuth webhook
+  subscription for signed `OutboundMessage` events; a PIT cannot subscribe.
 - STOP/opt-out compliance lives in `lib/compliance.js` backed by the
   `sms_optouts` table. Every outbound SMS path must check `isOptedOut()`
   first. This is a legal requirement; never remove or bypass it.

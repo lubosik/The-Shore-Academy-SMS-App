@@ -50,6 +50,15 @@ function pick(body, keys) {
   return null;
 }
 
+function pickAttachments(body) {
+  const candidates = body?.attachments || body?.customData?.attachments || body?.custom_data?.attachments || [];
+  if (!Array.isArray(candidates)) return [];
+  return candidates
+    .map(item => typeof item === 'string' ? item : item?.url)
+    .filter(url => typeof url === 'string' && url.startsWith('https://'))
+    .slice(0, 10);
+}
+
 let loggedUnrecognisedShape = false;
 
 module.exports = (broadcastSSE) => {
@@ -73,16 +82,17 @@ module.exports = (broadcastSSE) => {
       const body = req.body || {};
 
       const rawPhone = pick(body, ['phone', 'Phone', 'to', 'phone_number', 'phoneNumber']);
-      const message  = pick(body, ['message', 'Message', 'body', 'text', 'sms', 'messageBody']);
+      const message  = pick(body, ['message', 'Message', 'body', 'text', 'sms', 'messageBody']) || '';
+      const attachments = pickAttachments(body);
       const phone    = normalisePhone(rawPhone);
 
-      if (!phone || !message) {
+      if (!phone || (!message && attachments.length === 0)) {
         if (!loggedUnrecognisedShape) {
           loggedUnrecognisedShape = true;
           console.warn('[GHL-MSG] Unrecognised payload shape. Raw body follows so the picker can be tightened:');
           console.warn(JSON.stringify(body).slice(0, 5000));
         }
-        console.warn(`[GHL-MSG] Ignored — ${!phone ? 'no usable phone' : 'no message body'}`);
+        console.warn(`[GHL-MSG] Ignored — ${!phone ? 'no usable phone' : 'no message body or attachment'}`);
         return;
       }
 
@@ -114,15 +124,27 @@ module.exports = (broadcastSSE) => {
       const result = await storeGhlMessage({
         id:          pick(body, ['messageId', 'message_id', 'ghlMessageId']),
         body:        message,
+        attachments,
         direction,
-        dateAdded:   new Date().toISOString(),
+        dateAdded:   pick(body, ['dateAdded', 'date_added', 'createdAt']) || new Date().toISOString(),
         to:          phone,
-        messageType: 'TYPE_SMS'
+        from:        phone,
+        status:      pick(body, ['status']) || 'delivered',
+        messageType: pick(body, ['messageType', 'messageTypeString']) || 'TYPE_SMS'
       }, phone);
 
       if (result === 'inserted') {
-        broadcastSSE({ type: 'new_message', phone, body: message.slice(0, 500), direction });
+        broadcastSSE({
+          type: 'new_message',
+          phone,
+          body: message.slice(0, 500),
+          direction,
+          media_urls: attachments.map(url => ({ url }))
+        });
         console.log(`[GHL-MSG] Recorded ${direction} | ...${phone.slice(-4)} | ${message.slice(0, 50)}`);
+      } else if (result === 'updated') {
+        broadcastSSE({ type: 'message_refresh', phone });
+        console.log(`[GHL-MSG] updated | ...${phone.slice(-4)}`);
       } else {
         // Usually means the background sync got there first. Not a problem.
         console.log(`[GHL-MSG] ${result} | ...${phone.slice(-4)}`);

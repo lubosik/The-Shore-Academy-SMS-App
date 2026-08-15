@@ -26,7 +26,13 @@
 require('dotenv').config();
 
 const { supabase } = require('./db');
-const { searchConversations, getConversationMessages, forEachContactPage, sleep, PAGE_PAUSE_MS } = require('./lib/ghl-client');
+const {
+  forEachConversationPage,
+  getConversationMessages,
+  forEachContactPage,
+  sleep,
+  PAGE_PAUSE_MS
+} = require('./lib/ghl-client');
 const { upsertGhlContact } = require('./lib/ghl-contact-store');
 const { storeGhlMessage } = require('./lib/ghl-message-store');
 const { sendNativeMessagePush } = require('./lib/apns-notify');
@@ -44,6 +50,16 @@ const OVERLAP_MS = 10 * 60 * 1000;
 
 /** How far back a first run reaches when there is no watermark yet. */
 const FIRST_RUN_LOOKBACK_MS = 90 * 24 * 60 * 60 * 1000;
+
+function toEpochMs(value) {
+  if (value === undefined || value === null || value === '') return 0;
+  if (typeof value === 'number' || /^\d+$/.test(String(value))) {
+    const number = Number(value);
+    return number < 10_000_000_000 ? number * 1000 : number;
+  }
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
 
 let migrationWarningLogged = false;
 
@@ -132,7 +148,7 @@ async function syncFromGhl({ full = false, quiet = false } = {}) {
 
   const stats = {
     conversations: 0, scanned: 0, contactsSeen: 0, contactsAdded: 0, contactsUpdated: 0,
-    messagesAdded: 0, messagesLinked: 0, errors: 0
+    messagesAdded: 0, messagesUpdated: 0, messagesLinked: 0, errors: 0
   };
 
   const watermark = full ? null : await readWatermark();
@@ -187,11 +203,14 @@ async function syncFromGhl({ full = false, quiet = false } = {}) {
   });
 
   // ── Messages ────────────────────────────────────────────────────────────
-  const { conversations } = await searchConversations({ locationId });
+  const conversations = [];
+  await forEachConversationPage(locationId, async page => {
+    conversations.push(...page);
+  });
   stats.conversations = conversations.length;
 
   for (const conv of conversations) {
-    const lastMessageMs = Number(conv.lastMessageDate) || 0;
+    const lastMessageMs = toEpochMs(conv.lastMessageDate ?? conv.last_message_date);
     if (lastMessageMs > highWater) highWater = lastMessageMs;
 
     // Only pull messages for threads that have moved since we last looked.
@@ -209,8 +228,16 @@ async function syncFromGhl({ full = false, quiet = false } = {}) {
               type: 'new_message',
               phone: conv.phone,
               body: (m.body || '').slice(0, 500),
-              direction: m.direction === 'inbound' ? 'inbound' : 'outbound'
+              direction: m.direction === 'inbound' ? 'inbound' : 'outbound',
+              media_urls: Array.isArray(m.attachments)
+                ? m.attachments.map(item => ({ url: typeof item === 'string' ? item : item?.url })).filter(item => item.url)
+                : null
             });
+          } else if (result === 'updated') {
+            stats.messagesUpdated++;
+            // A delivery state or attachment can arrive after the first poll.
+            // Clients should reload this phone's canonical thread, not append.
+            broadcast({ type: 'message_refresh', phone: conv.phone });
           } else if (result === 'linked') {
             stats.messagesLinked++;
           }
@@ -231,12 +258,13 @@ async function syncFromGhl({ full = false, quiet = false } = {}) {
   // that errored would skip it permanently on the next run.
   if (highWater && stats.errors === 0) await writeWatermark(highWater);
 
-  const changed = stats.contactsAdded || stats.messagesAdded || stats.contactsUpdated || stats.errors;
+  const changed = stats.contactsAdded || stats.messagesAdded || stats.messagesUpdated
+    || stats.messagesLinked || stats.contactsUpdated || stats.errors;
   if (!quiet || changed) {
     console.log(
       `[GHL-SYNC] ${stats.contactsSeen} contacts, ${stats.conversations} conversations, ${stats.scanned} scanned | ` +
       `contacts +${stats.contactsAdded}/~${stats.contactsUpdated} | ` +
-      `messages +${stats.messagesAdded}/linked ${stats.messagesLinked} | errors ${stats.errors}`
+      `messages +${stats.messagesAdded}/~${stats.messagesUpdated}/linked ${stats.messagesLinked} | errors ${stats.errors}`
     );
   }
   return stats;
@@ -250,12 +278,12 @@ async function syncFromGhl({ full = false, quiet = false } = {}) {
  * onto, a webhook that failed while the app was redeploying, or a reply typed
  * by hand inside GHL, which fires no workflow at all.
  *
- * Fifteen minutes because it is a backstop, not the primary path. That is
- * ~100 GHL calls a day against a published ceiling of 200,000, so the cost is
- * immaterial either way — the reason not to poll faster is that the webhooks
- * already did the job, not the quota.
+ * The PIT-only integration cannot subscribe to GHL's signed Marketplace
+ * OutboundMessage webhook, so this runs every minute. That keeps messages
+ * typed manually in GHL close to real time while cursor/watermark filtering
+ * and idempotent writes keep the work bounded.
  */
-function startGhlSync(intervalMs = 15 * 60 * 1000) {
+function startGhlSync(intervalMs = 60 * 1000) {
   if (!process.env.GHL_PIT || !process.env.GHL_LOCATION_ID) {
     console.log('[GHL-SYNC] Disabled — GHL_PIT / GHL_LOCATION_ID not set.');
     return;
@@ -284,7 +312,7 @@ function startGhlSync(intervalMs = 15 * 60 * 1000) {
   console.log(`[GHL-SYNC] Mirroring GoHighLevel every ${Math.round(intervalMs / 1000)}s.`);
 }
 
-module.exports = { syncFromGhl, startGhlSync, WATERMARK_KEY };
+module.exports = { syncFromGhl, startGhlSync, WATERMARK_KEY, toEpochMs };
 
 // Run directly for a one-off backfill:
 //   node sync-ghl.js --full

@@ -32,7 +32,7 @@ inbox and a native iPhone client.
 
 ## GoHighLevel integration
 
-Three pieces, all read-or-notify only:
+The integration is bidirectional, with GHL remaining canonical:
 
 1. **`lib/ghl-client.js`** — fetch wrapper for the GHL v2 API
    (`https://services.leadconnectorhq.com`, `Version: 2021-07-28`, PIT
@@ -45,10 +45,26 @@ Three pieces, all read-or-notify only:
    UI; workflow webhooks carry no signature, so a shared secret rides in the
    URL and is compared timing-safely). Upserts the new contact and pushes a
    "New contact" notification to the iPhone.
+4. **`sync-ghl.js`** — every 60 seconds, cursor-paginates every changed GHL
+   conversation and all of its SMS/MMS pages. Official `SMS`/`TYPE_SMS`
+   variants, media-only messages, attachments, timestamps, and statuses are
+   reconciled by GHL message id into the exact E.164 phone thread.
+5. **`lib/ghl-writeback.js`** — app sends use
+   `POST /conversations/messages` once. GHL writes the canonical conversation
+   row and its configured Telnyx provider performs delivery. Customer replies,
+   including re-hosted MMS attachments, are recorded into that same GHL
+   contact conversation.
 
 There is also `POST /webhook/send` — a GHL workflow can send an outbound SMS
 through the Telnyx number (authenticated with `WEBHOOK_SECRET`; opt-outs are
-enforced server-side).
+enforced server-side). Provider messages carrying a stable GHL message id are
+claimed before the Telnyx call, making webhook retries at-most-once.
+
+Manual messages typed in GHL have no workflow hook. The one-minute poll is the
+reliable PIT-compatible path. True real-time delivery to the app requires a
+Marketplace/OAuth installation subscribing to HighLevel's signed
+`OutboundMessage` webhook; a Private Integration Token cannot create that
+subscription.
 
 ## Compliance
 
@@ -65,7 +81,8 @@ npm run build          # builds public/app.js from public/app.jsx
 node server.js
 ```
 
-Apply `scripts/schema.sql` to the Supabase project before first boot.
+Apply `scripts/schema.sql` and `scripts/mms-storage-migration.sql` to the
+Supabase project before first boot.
 
 One-time contact load (after `GHL_PIT` + `GHL_LOCATION_ID` are set):
 
