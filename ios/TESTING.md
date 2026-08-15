@@ -172,6 +172,11 @@ Telnyx must be able to fetch every outbound media URL without authentication.
    app should explain how to restore access rather than silently failing.
 8. Temporarily test a broken attachment URL in a fixture build. The bubble must
    show **Image couldn't be downloaded** and a working **Try Again** action.
+9. Press and hold a message image. Confirm the menu contains **Reply**, **Copy**,
+   **React**, and **Save**. Copy should copy the caption when present, or the
+   image for an image-only message. Tap **Save** and confirm the image appears
+   in Photos without first opening the full-screen viewer. For a message
+   containing multiple images, Save should add every attachment.
 
 Telnyx's current MMS documentation says media URLs must be public, individual
 files must remain below 1 MB, and the safest total across US carriers is below

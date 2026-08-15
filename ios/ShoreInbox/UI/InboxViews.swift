@@ -320,6 +320,8 @@ private struct MessageBubble: View {
     let reply: () -> Void
     let react: (String) -> Void
     @State private var openImage: MessageImageResource?
+    @State private var isSavingAttachments = false
+    @State private var saveNotice: String?
 
     var body: some View {
         HStack {
@@ -357,8 +359,8 @@ private struct MessageBubble: View {
             }
             .contextMenu {
                 Button("Reply", systemImage: "arrowshape.turn.up.left", action: reply)
-                if let body = message.body {
-                    Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = body }
+                if message.body?.isEmpty == false || !attachmentURLs.isEmpty {
+                    Button("Copy", systemImage: "doc.on.doc") { copyMessage() }
                 }
                 if message.numericID != nil {
                     Menu("React") {
@@ -367,11 +369,71 @@ private struct MessageBubble: View {
                         }
                     }
                 }
+                if !attachmentURLs.isEmpty {
+                    Button("Save", systemImage: "square.and.arrow.down") {
+                        saveAttachments()
+                    }
+                    .disabled(isSavingAttachments)
+                }
             }
             if message.isInbound { Spacer(minLength: 54) }
         }
         .sheet(item: $openImage) { resource in
             MessageImageViewer(resource: resource)
+        }
+        .alert("Image", isPresented: Binding(
+            get: { saveNotice != nil },
+            set: { if !$0 { saveNotice = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(saveNotice ?? "")
+        }
+    }
+
+    private var attachmentURLs: [URL] {
+        (message.mediaURLs ?? []).compactMap { URL(string: $0.url) }
+    }
+
+    private func saveAttachments() {
+        let urls = attachmentURLs
+        guard !urls.isEmpty else { return }
+        isSavingAttachments = true
+        Task {
+            var saved = 0
+            do {
+                for url in urls {
+                    try await PhotoLibrarySaver.save(from: url)
+                    saved += 1
+                }
+                saveNotice = saved == 1 ? "Saved to Photos." : "Saved \(saved) images to Photos."
+            } catch {
+                saveNotice = saved == 0
+                    ? ((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
+                    : "Saved \(saved) image\(saved == 1 ? "" : "s"), but another image could not be saved: \((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)"
+            }
+            isSavingAttachments = false
+        }
+    }
+
+    private func copyMessage() {
+        if let body = message.body, !body.isEmpty {
+            UIPasteboard.general.string = body
+            return
+        }
+        guard let url = attachmentURLs.first else { return }
+        Task {
+            do {
+                let data = try await PhotoLibrarySaver.imageData(from: url)
+                if let image = UIImage(data: data) {
+                    UIPasteboard.general.image = image
+                    saveNotice = "Image copied."
+                } else {
+                    saveNotice = "Image format isn’t supported."
+                }
+            } catch {
+                saveNotice = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            }
         }
     }
 

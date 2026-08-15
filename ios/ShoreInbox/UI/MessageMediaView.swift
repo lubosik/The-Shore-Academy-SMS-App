@@ -199,7 +199,30 @@ private enum PhotoLibrarySaveError: LocalizedError {
     }
 }
 
-private enum PhotoLibrarySaver {
+enum PhotoLibrarySaver {
+    static func imageData(from url: URL) async throws -> Data {
+        var request = URLRequest(url: url)
+        request.cachePolicy = .returnCacheDataElseLoad
+        request.timeoutInterval = 30
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let response = response as? HTTPURLResponse,
+              (200...299).contains(response.statusCode) else {
+            throw MessageImageError.downloadFailed
+        }
+        guard data.count <= 15 * 1024 * 1024 else {
+            throw MessageImageError.tooLarge
+        }
+        guard UIImage(data: data) != nil else {
+            throw MessageImageError.unsupportedFormat
+        }
+        return data
+    }
+
+    static func save(from url: URL) async throws {
+        let data = try await imageData(from: url)
+        try await save(data)
+    }
+
     static func save(_ data: Data) async throws {
         guard UIImage(data: data) != nil else { throw PhotoLibrarySaveError.invalidImage }
 
