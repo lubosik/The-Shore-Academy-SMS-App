@@ -12,6 +12,7 @@ const path    = require('path');
 const { verifyConnection } = require('./db');
 const { startGhlSync } = require('./sync-ghl');
 const { reportVoiceConfig } = require('./lib/voice-preflight');
+const { startRecordingRetentionJob } = require('./lib/private-recordings');
 require('./push-notify'); // initialises VAPID on startup
 
 const app = express();
@@ -136,6 +137,7 @@ app.listen(PORT, '0.0.0.0', async () => {
   // Says whether Telnyx can actually place a call, rather than leaving it to
   // be discovered by one failing. Advisory: never blocks or crashes startup.
   reportVoiceConfig();
+  startRecordingRetentionJob();
 });
 
 module.exports = { app, broadcastSSE };

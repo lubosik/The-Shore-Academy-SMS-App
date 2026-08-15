@@ -78,6 +78,11 @@ CREATE TABLE IF NOT EXISTS call_logs (
   recording_id      text,
   recording_url_mp3 text,
   recording_url_wav text,
+  recording_storage_path text,
+  recording_content_type text,
+  recording_archived_at timestamptz,
+  recording_expires_at timestamptz,
+  recording_deleted_at timestamptz,
   started_at        timestamptz DEFAULT now(),
   answered_at       timestamptz,
   ended_at          timestamptz,
@@ -88,6 +93,9 @@ CREATE INDEX IF NOT EXISTS call_logs_started_idx ON call_logs (started_at DESC);
 CREATE INDEX IF NOT EXISTS call_logs_unseen_missed_idx
   ON call_logs (started_at DESC)
   WHERE seen_at IS NULL AND direction = 'inbound' AND status = 'missed';
+CREATE INDEX IF NOT EXISTS call_logs_recording_expiry_idx
+  ON call_logs (recording_expires_at)
+  WHERE recording_expires_at IS NOT NULL AND recording_deleted_at IS NULL;
 
 -- ── Opt-outs ────────────────────────────────────────────────────────────────
 -- STOP handling is a legal requirement, not a feature, so it gets a table of

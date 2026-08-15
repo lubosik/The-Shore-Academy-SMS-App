@@ -56,6 +56,13 @@ inbox on one Telnyx number (+15613630929).
   inbound-message webhook (`lib/apns-notify.js`). The GHL new-contact webhook
   reuses the same sender. This is separate from browser VAPID and VoIP
   PushKit.
+- Call recording stays functional, but provider download URLs must never be
+  returned to a client. `lib/private-recordings.js` archives audio into the
+  private `call-recordings` bucket and `/api/voice/recordings/:id` creates an
+  authenticated, short-lived playback redirect. Apply
+  `scripts/private-recordings-migration.sql` before deploying related code.
+  Retention deletion is destructive and must remain disabled until its dry run
+  and target rows are approved.
 
 ## Important paths
 
@@ -64,6 +71,8 @@ inbox on one Telnyx number (+15613630929).
 - `public/`: browser UI. `public/app.jsx` is the source and `public/app.js` is
   its Babel build output.
 - `scripts/schema.sql`: full database schema (idempotent — safe to re-run).
+- `scripts/private-recordings-migration.sql`: private call-recording bucket and
+  lifecycle columns for existing deployments.
 - `scripts/import-ghl-contacts.js`: bulk GHL contact import (`--dry-run`
   supported). Do NOT run against production merely as validation.
 - `scripts/test-mms-flows.js`: integration harness for MMS/replies/tapbacks —

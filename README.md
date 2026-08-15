@@ -81,8 +81,12 @@ npm run build          # builds public/app.js from public/app.jsx
 node server.js
 ```
 
-Apply `scripts/schema.sql` and `scripts/mms-storage-migration.sql` to the
-Supabase project before first boot.
+Apply `scripts/schema.sql`, `scripts/mms-storage-migration.sql`, and
+`scripts/private-recordings-migration.sql` to the Supabase project before first
+boot. Recordings are copied from Telnyx into a private bucket and played only
+through an authenticated route that creates a short-lived signed URL. Automatic
+retention deletion remains off unless `CALL_RECORDING_RETENTION_ENFORCED=true`
+is deliberately approved and configured.
 
 One-time contact load (after `GHL_PIT` + `GHL_LOCATION_ID` are set):
 
