@@ -1,39 +1,35 @@
 const router = require('express').Router();
 const { supabase } = require('../db');
 const { reconcileRecentMessageStatuses } = require('../lib/message-status');
+const { fetchAllRows } = require('../lib/fetch-all-rows');
 
 router.get('/', async (req, res) => {
   try {
-    // Fetch all contacts
-    const { data: contacts } = await supabase
-      .from('sms_contacts')
-      .select('*');
+    // Both reads are paged, and neither filters by a list of phone numbers.
+    //
+    // This route used to pass every contact phone into `.in()`, which puts them
+    // in the URL. On the sister app that reached ~11,800 characters at 907
+    // contacts and overflowed Node's HTTP header limit, so the query failed
+    // after a ~10 second stall. The error was swallowed, every lastMessage came
+    // back null, and the inbox rendered phone numbers where message previews
+    // belong. Shore is smaller but grows the same way — GHL added 27 leads in a
+    // day — so it is fixed here before it can bite.
+    //
+    // Reading whole tables in pages is also faster: every message belongs to a
+    // contact, so filtering by contact bought nothing.
+    const [contacts, allMessages] = await Promise.all([
+      fetchAllRows(supabase, 'sms_contacts', '*', { orderBy: null }),
+      fetchAllRows(supabase, 'sms_messages', 'contact_phone, body, direction, created_at, media_urls')
+    ]);
 
-    if (!contacts?.length) return res.json([]);
+    if (!contacts.length) return res.json([]);
 
-    // Fetch latest message per contact in one batch
-    let { data: allMessages, error: msgErr } = await supabase
-      .from('sms_messages')
-      .select('contact_phone, body, direction, created_at, media_urls')
-      .in('contact_phone', contacts.map(c => c.phone))
-      .order('created_at', { ascending: false });
-
-    // Fallback for a not-yet-migrated schema (media_urls column missing)
-    if (msgErr) {
-      ({ data: allMessages } = await supabase
-        .from('sms_messages')
-        .select('contact_phone, body, direction, created_at')
-        .in('contact_phone', contacts.map(c => c.phone))
-        .order('created_at', { ascending: false }));
-    }
-
-    // Build lookup map — first entry per phone = latest (already sorted desc)
+    // Sorted newest-first, so the first entry seen per phone is the latest.
     const latestMessage = {};
-    for (const m of (allMessages || [])) {
+    for (const m of allMessages) {
       if (!latestMessage[m.contact_phone]) latestMessage[m.contact_phone] = m;
     }
 
-    // Enrich contacts with their latest message
     const enriched = contacts.map(c => ({
       ...c,
       lastMessage: latestMessage[c.phone] || null
