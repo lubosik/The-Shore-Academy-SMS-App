@@ -110,15 +110,28 @@ module.exports = (broadcastSSE) => {
       if (stopPattern.test(text.trim())) {
         console.log(`[OPT-OUT] Received STOP from ...${fromPhone.slice(-4)}`);
         await markOptedOut(fromPhone, text.trim());
-        // Log the inbound stop message but do not send any auto-reply
-        await supabase.from('sms_messages').insert({
-          telnyx_message_id: messageId,
-          contact_phone: fromPhone,
-          direction: 'inbound',
-          body: text,
-          status: 'delivered',
-          created_at: payload.received_at || new Date().toISOString()
-        }).catch(() => {});
+        // Log the inbound stop message but do not send any auto-reply.
+        //
+        // This used to end in `.catch(() => {})`. A Supabase query builder is a
+        // thenable with `then` only — it has no `catch` — so that threw
+        // `TypeError: ...insert(...).catch is not a function` before the request
+        // was dispatched, and the outer catch swallowed it. Everything below was
+        // therefore skipped on every STOP, including setGhlDnd — which is the
+        // one call that stops GHL's workflows texting someone who opted out.
+        // A PostgREST failure arrives in `error`, never as a rejection.
+        try {
+          const { error: stopLogError } = await supabase.from('sms_messages').insert({
+            telnyx_message_id: messageId,
+            contact_phone: fromPhone,
+            direction: 'inbound',
+            body: text,
+            status: 'delivered',
+            created_at: payload.received_at || new Date().toISOString()
+          });
+          if (stopLogError) console.error('[OPT-OUT] Could not record the STOP message:', stopLogError.message);
+        } catch (stopLogErr) {
+          console.error('[OPT-OUT] Could not record the STOP message:', stopLogErr.message);
+        }
         // Keep the compliance keyword visible in the same GHL thread before
         // setting DND, so staff can see why the contact was suppressed.
         await recordInboundInGhl(fromPhone, text);
