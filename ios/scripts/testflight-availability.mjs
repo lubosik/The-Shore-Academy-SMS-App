@@ -107,14 +107,20 @@ if (groupId) {
 
 if (notifyTesters) {
   if (assignedTesterCount === 0) throw new Error('No assigned testers; notification was not sent');
-  await request('/v1/buildBetaNotifications', {
-    method: 'POST',
-    body: JSON.stringify({
-      data: {
-        type: 'buildBetaNotifications',
-        relationships: { build: { data: { type: 'builds', id: build.id } } }
-      }
-    })
-  });
-  console.log(`Asked TestFlight to notify assigned testers about build ${buildNumber}`);
+  const details = await request(`/v1/builds/${build.id}/buildBetaDetail?fields%5BbuildBetaDetails%5D=autoNotifyEnabled,internalBuildState,externalBuildState`);
+  console.log(`Build ${buildNumber} notification setting: auto=${details.data.attributes.autoNotifyEnabled}, internal=${details.data.attributes.internalBuildState}`);
+  if (details.data.attributes.autoNotifyEnabled) {
+    console.log(`TestFlight automatically notifies assigned testers about build ${buildNumber}`);
+  } else {
+    await request('/v1/buildBetaNotifications', {
+      method: 'POST',
+      body: JSON.stringify({
+        data: {
+          type: 'buildBetaNotifications',
+          relationships: { build: { data: { type: 'builds', id: build.id } } }
+        }
+      })
+    });
+    console.log(`Asked TestFlight to notify assigned testers about build ${buildNumber}`);
+  }
 }
