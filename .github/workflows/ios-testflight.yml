@@ -8,7 +8,7 @@ on:
       changelog:
         description: "What testers should know about this build"
         required: false
-        default: "Internal build"
+        default: "🌊 Shore Academy Inbox has a new update. Open TestFlight and tap Update to get the latest improvements."
 
 concurrency:
   group: ios-testflight
@@ -185,15 +185,15 @@ jobs:
             skip_submission:true \
             changelog:"$CHANGELOG"
 
-      # Uploading alone does not put the new build on testers' phones. Assign
-      # the processed build to the existing Shore Academy internal tester group.
-      - name: Make build available to internal testers
+      # Assign the processed build before asking TestFlight to alert its testers.
+      - name: Make build available and notify testers
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           ASC_KEY_P8_BASE64: ${{ secrets.ASC_KEY_P8_BASE64 }}
           BUILD_NUMBER: ${{ github.run_number }}
           BETA_GROUP_ID: c511a677-54cd-43eb-a352-ec1d7c4f83a7
+          NOTIFY_TESTERS: 'true'
         run: node ios/scripts/testflight-availability.mjs
 
       - name: Remove the API key

@@ -11,6 +11,11 @@ on:
         description: Existing Shore Academy beta group ID to assign (blank means inspect only)
         required: false
         default: ''
+      notify_testers:
+        description: Ask TestFlight to notify assigned testers after inspection or assignment
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -27,4 +32,5 @@ jobs:
           ASC_KEY_P8_BASE64: ${{ secrets.ASC_KEY_P8_BASE64 }}
           BUILD_NUMBER: ${{ inputs.build_number }}
           BETA_GROUP_ID: ${{ inputs.group_id }}
+          NOTIFY_TESTERS: ${{ inputs.notify_testers }}
         run: node ios/scripts/testflight-availability.mjs

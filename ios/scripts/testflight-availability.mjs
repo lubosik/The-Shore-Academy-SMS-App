@@ -3,8 +3,9 @@
 import { createPrivateKey, sign } from 'node:crypto';
 
 const APP_ID = '6800407508';
-const buildNumber = process.env.BUILD_NUMBER || '8';
+const buildNumber = process.env.BUILD_NUMBER;
 const groupId = process.env.BETA_GROUP_ID || '';
+const notifyTesters = process.env.NOTIFY_TESTERS === 'true';
 const keyId = process.env.ASC_KEY_ID;
 const issuerId = process.env.ASC_ISSUER_ID;
 const encodedKey = process.env.ASC_KEY_P8_BASE64;
@@ -66,6 +67,7 @@ if (groupsResponse.links?.next) throw new Error('More than 200 groups; inspect p
 const groups = groupsResponse.data;
 if (groups.length === 0) throw new Error('This app has no beta tester group');
 
+let assignedTesterCount = 0;
 for (const group of groups) {
   const [groupBuilds, testers] = await Promise.all([
     request(`/v1/betaGroups/${group.id}/relationships/builds?limit=200`),
@@ -74,6 +76,7 @@ for (const group of groups) {
   if (groupBuilds.links?.next || testers.links?.next) {
     throw new Error(`Group ${group.attributes.name} exceeds the inspected page limit`);
   }
+  if (groupBuilds.data.some(item => item.id === build.id)) assignedTesterCount += testers.data.length;
   console.log(JSON.stringify({
     group: group.attributes.name,
     id: group.id,
@@ -97,5 +100,21 @@ if (groupId) {
   });
   const assigned = await request(`/v1/betaGroups/${groupId}/relationships/builds?limit=200`);
   if (!assigned.data.some(item => item.id === build.id)) throw new Error('Assignment did not appear in the group');
+  const testers = await request(`/v1/betaGroups/${groupId}/relationships/betaTesters?limit=200`);
+  assignedTesterCount += testers.data.length;
   console.log(`Verified build ${buildNumber} is assigned to group ${group.attributes.name}`);
+}
+
+if (notifyTesters) {
+  if (assignedTesterCount === 0) throw new Error('No assigned testers; notification was not sent');
+  await request('/v1/buildBetaNotifications', {
+    method: 'POST',
+    body: JSON.stringify({
+      data: {
+        type: 'buildBetaNotifications',
+        relationships: { build: { data: { type: 'builds', id: build.id } } }
+      }
+    })
+  });
+  console.log(`Asked TestFlight to notify assigned testers about build ${buildNumber}`);
 }
