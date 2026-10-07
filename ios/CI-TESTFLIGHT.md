@@ -114,6 +114,7 @@ Expect 15-30 minutes for the first run.
 | Archive | Creates an unsigned release archive; build number comes from the run number so TestFlight never sees a duplicate |
 | Export .ipa | Uses `ExportOptions.plist`, method `app-store-connect`, and applies cloud-managed distribution signing |
 | Upload | fastlane `pilot` — `altool` is deprecated and currently broken on Xcode 26 |
+| Assign testers | Adds the processed build to the existing Shore Academy Internal group and verifies it appears there |
 | Remove the API key | Runs even if the build failed |
 
 ## Installing on the iPhone

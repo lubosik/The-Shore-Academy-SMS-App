@@ -46,9 +46,16 @@ const query = new URLSearchParams({
   'fields[builds]': 'version,processingState,expired,buildAudienceType',
   limit: '20'
 });
-const builds = (await request(`/v1/builds?${query}`)).data;
-if (builds.length !== 1) throw new Error(`Expected one Shore Academy build ${buildNumber}; found ${builds.length}`);
-const build = builds[0];
+let build;
+for (let attempt = 0; attempt < (groupId ? 40 : 1); attempt++) {
+  const builds = (await request(`/v1/builds?${query}`)).data;
+  if (builds.length > 1) throw new Error(`Expected one Shore Academy build ${buildNumber}; found ${builds.length}`);
+  build = builds[0];
+  if (build?.attributes.processingState === 'VALID') break;
+  if (build && build.attributes.processingState !== 'PROCESSING') break;
+  if (attempt < 39 && groupId) await new Promise(resolve => setTimeout(resolve, 15_000));
+}
+if (!build) throw new Error(`Shore Academy build ${buildNumber} was not found`);
 console.log(`Build ${buildNumber}: ${build.attributes.processingState}, expired=${build.attributes.expired}, audience=${build.attributes.buildAudienceType}`);
 if (build.attributes.processingState !== 'VALID' || build.attributes.expired) {
   throw new Error('Build is not available for testing');

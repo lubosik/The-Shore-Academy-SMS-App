@@ -185,6 +185,17 @@ jobs:
             skip_submission:true \
             changelog:"$CHANGELOG"
 
+      # Uploading alone does not put the new build on testers' phones. Assign
+      # the processed build to the existing Shore Academy internal tester group.
+      - name: Make build available to internal testers
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8_BASE64: ${{ secrets.ASC_KEY_P8_BASE64 }}
+          BUILD_NUMBER: ${{ github.run_number }}
+          BETA_GROUP_ID: c511a677-54cd-43eb-a352-ec1d7c4f83a7
+        run: node ios/scripts/testflight-availability.mjs
+
       - name: Remove the API key
         if: always()
         run: rm -rf "$KEY_DIR"
