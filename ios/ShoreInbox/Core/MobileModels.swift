@@ -283,56 +283,48 @@ struct CallLogRecord: Codable, Identifiable, Hashable {
     }
 }
 
-/**
- * How a message timestamp reads in a thread: "7:04 PM · Sep 8".
- *
- * Kept beside ServerDate because it is the other half of the same job — that
- * one turns the server's string into a Date, this one turns a Date into what
- * the bubble shows. Both apps and the web inbox print the same shape, so a
- * screenshot from one is legible next to a screenshot from the other.
- *
- * The bubble used to show `style: .time`, which is "7:04 PM" and nothing else.
- * That is unambiguous while you are looking at it and useless in a screenshot
- * read days later: you cannot tell a reply that came back in four minutes from
- * one that came the following afternoon.
- *
- * The year appears only when the message is not from the current year, which
- * keeps a normal thread uncluttered without making an old one ambiguous.
- *
- * The formatters are static because DateFormatter construction is expensive and
- * a thread builds one bubble per message while scrolling.
- */
+/// Calendar-day labels for message bubbles in the selected time zone.
 enum MessageStamp {
+    static let defaultTimeZoneID = "America/New_York"
+    static let preferenceKey = "shore-inbox-time-zone"
+
+    static func timeZone(for identifier: String) -> TimeZone {
+        TimeZone(identifier: identifier) ?? TimeZone(identifier: defaultTimeZoneID)!
+    }
+
     private static let time: DateFormatter = {
         let formatter = DateFormatter()
-        formatter.setLocalizedDateFormatFromTemplate("j:mm")
+        formatter.locale = Locale(identifier: "en_GB")
+        formatter.dateFormat = "HH:mm"
         return formatter
     }()
     private static let dayMonth: DateFormatter = {
         let formatter = DateFormatter()
-        formatter.setLocalizedDateFormatFromTemplate("MMM d")
+        formatter.locale = Locale(identifier: "en_GB")
+        formatter.dateFormat = "d MMM"
         return formatter
     }()
     private static let dayMonthYear: DateFormatter = {
         let formatter = DateFormatter()
-        formatter.setLocalizedDateFormatFromTemplate("MMM d yyyy")
+        formatter.locale = Locale(identifier: "en_GB")
+        formatter.dateFormat = "d MMM yyyy"
         return formatter
     }()
 
-    /// - Parameter timeZone: the app's effective zone, so a bubble agrees with
-    ///   Settings, the appearance schedule and the web inbox rather than
-    ///   silently reading the device clock.
     static func format(_ date: Date, timeZone: TimeZone, now: Date = Date()) -> String {
-        var calendar = Calendar.current
+        var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = timeZone
-        // The year test has to run in the SAME zone the date is printed in, or
-        // a message just either side of New Year gains or loses a year label.
-        let sameYear = calendar.component(.year, from: date) == calendar.component(.year, from: now)
-
         time.timeZone = timeZone
+        let clock = time.string(from: date)
+        if calendar.isDate(date, inSameDayAs: now) { return clock }
+        if let yesterday = calendar.date(byAdding: .day, value: -1, to: now),
+           calendar.isDate(date, inSameDayAs: yesterday) {
+            return "Yesterday \(clock)"
+        }
+        let sameYear = calendar.component(.year, from: date) == calendar.component(.year, from: now)
         let dayFormatter = sameYear ? dayMonth : dayMonthYear
         dayFormatter.timeZone = timeZone
-        return "\(time.string(from: date)) · \(dayFormatter.string(from: date))"
+        return "\(dayFormatter.string(from: date)) \(clock)"
     }
 }
 

@@ -72,12 +72,23 @@ struct MainTabView: View {
 
 struct SettingsView: View {
     @EnvironmentObject private var session: SessionModel
+    @AppStorage(MessageStamp.preferenceKey) private var displayTimeZoneID = MessageStamp.defaultTimeZoneID
     @ObservedObject private var notifications = MessageNotificationManager.shared
     @State private var isSigningOut = false
 
     var body: some View {
         NavigationView {
             List {
+                Section {
+                    Picker("Time zone", selection: $displayTimeZoneID) {
+                        Text("Eastern time").tag("America/New_York")
+                        Text("UK time").tag("Europe/London")
+                    }
+                } header: {
+                    Text("Message times")
+                } footer: {
+                    Text("Today shows the time; yesterday and older messages show the day as well. Eastern time is the default. This choice only changes dates shown on this iPhone.")
+                }
                 Section("Connection") {
                     LabeledContent("Status", value: session.voiceStatusText)
                     LabeledContent("Number", value: session.callerNumber.isEmpty

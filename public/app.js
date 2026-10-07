@@ -4,7 +4,9 @@ const {
   useRef,
   useCallback
 } = React;
-const TZ = 'America/New_York';
+const TIME_ZONE_KEY = 'shore-inbox-time-zone';
+const TIME_ZONES = ['America/New_York', 'Europe/London'];
+let TZ = TIME_ZONES.includes(localStorage.getItem(TIME_ZONE_KEY)) ? localStorage.getItem(TIME_ZONE_KEY) : TIME_ZONES[0];
 
 // Proper responsive hook — updates on resize, avoids stale window.innerWidth reads
 function useIsMobile() {
@@ -37,46 +39,41 @@ function relativeTime(ts) {
   });
 }
 
-/**
- * The time AND the date on every message, in and out.
- *
- * This used to hide the date on anything sent today, on the reasonable-sounding
- * theory that "7:04 PM" is unambiguous while you are looking at it. In practice
- * a thread is read days later, screenshotted, and pasted into a chat with
- * somebody else, and at that point a bare time is unanchored: you cannot tell a
- * reply that came back in four minutes from one that came back the following
- * afternoon. The shop owner asked for the date "because it's easier to keep
- * track", which is exactly that problem.
- *
- * The year appears only when the message is not from this year. Every message
- * carries a full timestamp already, so this is purely what gets shown — there
- * was nothing to backfill.
- */
-function formatTime(ts) {
+/** Calendar-day labels use the selected zone, including around midnight and DST. */
+function formatTime(ts, now = new Date(), timeZone = TZ) {
   if (!ts) return '';
   const d = new Date(ts);
-  const time = d.toLocaleTimeString('en-US', {
-    timeZone: TZ,
-    hour: 'numeric',
+  if (Number.isNaN(d.getTime())) return '';
+  const parts = date => {
+    const values = new Intl.DateTimeFormat('en-GB', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).formatToParts(date);
+    return Object.fromEntries(values.map(part => [part.type, Number(part.value)]));
+  };
+  const messageDay = parts(d);
+  const today = parts(now);
+  const dayNumber = value => Date.UTC(value.year, value.month - 1, value.day) / 86400000;
+  const daysAgo = dayNumber(today) - dayNumber(messageDay);
+  const time = d.toLocaleTimeString('en-GB', {
+    timeZone,
+    hour: '2-digit',
     minute: '2-digit',
-    hour12: true
+    hour12: false
   });
-  // Compared through the same timezone as everything else, so a message sent
-  // late on 31 December is not labelled with the viewer's local year.
-  const yearOf = date => date.toLocaleDateString('en-US', {
-    timeZone: TZ,
-    year: 'numeric'
-  });
-  const sameYear = yearOf(d) === yearOf(new Date());
-  const date = d.toLocaleDateString('en-US', {
-    timeZone: TZ,
-    month: 'short',
+  if (daysAgo === 0) return time;
+  if (daysAgo === 1) return `Yesterday ${time}`;
+  const date = d.toLocaleDateString('en-GB', {
+    timeZone,
     day: 'numeric',
-    ...(sameYear ? {} : {
+    month: 'short',
+    ...(messageDay.year === today.year ? {} : {
       year: 'numeric'
     })
   });
-  return `${time} · ${date}`;
+  return `${date} ${time}`;
 }
 function formatDate(ts) {
   if (!ts) return '—';
@@ -1539,7 +1536,11 @@ function MessagesView({
     }
   }, "No messages yet") : visibleMessages.map((m, idx) => {
     const prev = visibleMessages[idx - 1];
-    const showDate = !prev || new Date(m.created_at).toDateString() !== new Date(prev.created_at).toDateString();
+    const showDate = !prev || new Date(m.created_at).toLocaleDateString('en-GB', {
+      timeZone: TZ
+    }) !== new Date(prev.created_at).toLocaleDateString('en-GB', {
+      timeZone: TZ
+    });
     const original = m.reply_to_message_id ? activeMessages.find(x => x.id === m.reply_to_message_id) : null;
     const media = Array.isArray(m.media_urls) ? m.media_urls : [];
     const reactions = Array.isArray(m.reactions) ? m.reactions : [];
@@ -2544,6 +2545,7 @@ function VoiceTab({
 // ─── Main App ─────────────────────────────────────────────────────────────────
 
 function App() {
+  const [displayTimeZone, setDisplayTimeZone] = useState(TZ);
   const [auth, setAuth] = useState({
     checking: true,
     ok: false
@@ -3458,7 +3460,21 @@ function App() {
     className: `conn-dot ${sseStatus}`
   }), /*#__PURE__*/React.createElement("span", null, sseStatus)), /*#__PURE__*/React.createElement("div", {
     className: "header-actions"
-  }, /*#__PURE__*/React.createElement("button", {
+  }, /*#__PURE__*/React.createElement("select", {
+    className: "time-zone-select",
+    "aria-label": "Message time zone",
+    title: "Message time zone",
+    value: displayTimeZone,
+    onChange: event => {
+      TZ = event.target.value;
+      localStorage.setItem(TIME_ZONE_KEY, TZ);
+      setDisplayTimeZone(TZ);
+    }
+  }, /*#__PURE__*/React.createElement("option", {
+    value: "America/New_York"
+  }, "Eastern time"), /*#__PURE__*/React.createElement("option", {
+    value: "Europe/London"
+  }, "UK time")), /*#__PURE__*/React.createElement("button", {
     className: `hdr-btn hdr-btn-push${pushState === 'subscribed' ? ' active' : ''}`,
     onClick: togglePush,
     disabled: pushLoading || pushState === 'unsupported' || pushState === 'denied',

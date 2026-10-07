@@ -319,6 +319,7 @@ private struct MessageBubble: View {
     let message: MessageRecord
     let reply: () -> Void
     let react: (String) -> Void
+    @AppStorage(MessageStamp.preferenceKey) private var displayTimeZoneID = MessageStamp.defaultTimeZoneID
     @State private var openImage: MessageImageResource?
     @State private var isSavingAttachments = false
     @State private var saveNotice: String?
@@ -343,18 +344,7 @@ private struct MessageBubble: View {
                 }
                 HStack(spacing: 5) {
                     if let date = ServerDate.parse(message.createdAt) {
-                        // Time AND date, matching the web inbox. `style: .time`
-                        // showed only "7:04 PM", which is unambiguous while you
-                        // are looking at it and useless in a screenshot read
-                        // days later: you cannot tell a reply that came back in
-                        // four minutes from one that came the next afternoon.
-                        // This device's zone, which is this app's only notion
-                        // of time: unlike the Vici app it was forked from,
-                        // there is no AppearanceModel and no timezone setting
-                        // anywhere in it. Passed explicitly rather than left to
-                        // a default so that the day this app grows an account
-                        // timezone, the one place to change is visible here.
-                        Text(MessageStamp.format(date, timeZone: .current))
+                        Text(MessageStamp.format(date, timeZone: MessageStamp.timeZone(for: displayTimeZoneID)))
                             .font(.caption2).foregroundStyle(.secondary)
                     }
                     if !message.isInbound, let status = message.status {

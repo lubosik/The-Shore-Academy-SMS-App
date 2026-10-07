@@ -180,6 +180,12 @@ body {
 .conn-dot.disconnected, .conn-dot.connecting { background: var(--text3); }
 
 .header-actions { display: flex; gap: 0.375rem; }
+.time-zone-select {
+  max-width: 8.5rem; min-width: 0;
+  background: var(--surface2); border: 1px solid var(--border);
+  color: var(--text); border-radius: 6px; padding: 0.3rem 0.25rem;
+  font-size: 0.6875rem;
+}
 .hdr-btn {
   background: none; border: 1px solid var(--border); color: var(--text3);
   padding: 0.3rem 0.625rem; border-radius: 6px; font-size: 0.6875rem;
@@ -522,6 +528,10 @@ body {
 @media (max-width: 768px) {
   .bottom-nav { display: block; }
   .header-tabs { display: none; }
+  .header { gap: 0.375rem; padding: 0 0.5rem; }
+  .header-logo { font-size: 0.75rem; }
+  .header-logo small, .conn-pill { display: none; }
+  .time-zone-select { max-width: 5.5rem; }
 
   .conv-sidebar { width: 100%; min-width: 0; border-right: none; }
   .conv-sidebar.hidden { display: none; }
