@@ -1,0 +1,30 @@
+name: iOS TestFlight availability
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_number:
+        description: Existing processed build number to inspect
+        required: true
+        default: '8'
+      group_id:
+        description: Existing Shore Academy beta group ID to assign (blank means inspect only)
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  availability:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect or assign processed build
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8_BASE64: ${{ secrets.ASC_KEY_P8_BASE64 }}
+          BUILD_NUMBER: ${{ inputs.build_number }}
+          BETA_GROUP_ID: ${{ inputs.group_id }}
+        run: node ios/scripts/testflight-availability.mjs
