@@ -22,7 +22,7 @@ queue, history, or cancellation UI.
 | Display name | Shore Academy |
 | Apple Team ID | `PQFYN2CD77` (same developer account as before the rebrand) |
 | Deployment target | iOS 16.0, iPhone only |
-| Telnyx SDK | `TelnyxRTC` 4.1.2 (Swift Package Manager) |
+| Telnyx SDK | `TelnyxRTC` 4.2.2 (Swift Package Manager) |
 | Backend URL | **placeholder** — see below |
 | Capabilities | Push Notifications, Background Modes → Voice over IP + Audio |
 
@@ -212,7 +212,7 @@ because XcodeGen cannot run on macOS 13.
   successful `connect()`. A fresh install must be opened once.
 - **`pushWhenActive` stays false.** A foreground SDK socket receives the INVITE
   directly and `onIncomingCall` still reports it through CallKit. With SDK
-  4.1.2, also processing a push while connected replaces that socket and can
+  4.2.2, also processing a push while connected replaces that socket and can
   lose the INVITE during Answer. Locked/background calls still use PushKit.
 
 ## Missed-call and unread badges

@@ -54,7 +54,7 @@ extension AppDelegate: PKPushRegistryDelegate {
                       didUpdate credentials: PKPushCredentials,
                       for type: PKPushType) {
         guard type == .voIP else { return }
-        // Match the Telnyx 4.1.2 reference implementation exactly. Hex is
+        // Match the Telnyx reference implementation exactly. Hex is
         // semantically case-insensitive, but using the documented uppercase
         // form removes an avoidable variable from push-token troubleshooting.
         let token = credentials.token.reduce("") { $0 + String(format: "%02X", $1) }

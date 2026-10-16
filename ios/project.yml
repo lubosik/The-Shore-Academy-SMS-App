@@ -27,9 +27,9 @@ settings:
 packages:
   TelnyxRTC:
     url: https://github.com/team-telnyx/telnyx-webrtc-ios
-    # The native call code was audited against this exact API. Do not allow a
-    # later 4.x release to change underneath an uncompiled release build.
-    exactVersion: "4.1.2"
+    # Pin the version so call/media behavior cannot change between builds.
+    # 4.2.1 fixed silent CallKit audio; 4.2.2 includes that fix.
+    exactVersion: "4.2.2"
 
 targets:
   ShoreInbox:

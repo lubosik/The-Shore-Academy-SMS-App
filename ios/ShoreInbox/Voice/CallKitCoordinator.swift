@@ -14,6 +14,7 @@ protocol CallKitActionHandler: AnyObject {
     func callKitAnswer(action: CXAnswerCallAction)
     func callKitEnd(action: CXEndCallAction)
     func callKitStartOutgoing(action: CXStartCallAction)
+    func callKitStartTimedOut(uuid: UUID)
     func callKitSetMuted(uuid: UUID, muted: Bool)
     func callKitSetHeld(uuid: UUID, held: Bool)
     func callKitSendDTMF(uuid: UUID, digits: String)
@@ -248,7 +249,12 @@ extension CallKitCoordinator: CXProviderDelegate {
 
     func provider(_ provider: CXProvider, timedOutPerforming action: CXAction) {
         Log.voice("CallKit action timed out: \(type(of: action))")
-        action.fulfill()
+        if let start = action as? CXStartCallAction {
+            start.fail()
+            actionHandler?.callKitStartTimedOut(uuid: start.callUUID)
+        } else {
+            action.fail()
+        }
     }
 
     /// The SDK does not activate the audio session itself under CallKit — audio

@@ -33,7 +33,7 @@ enum AppConfig {
 
     /// A connected SDK client receives the INVITE directly and reports it to
     /// CallKit. Asking Telnyx to also push while that socket is active makes
-    /// SDK 4.1.2 disconnect the live socket in `processVoIPNotification`, which
+    /// The SDK can disconnect the live socket in `processVoIPNotification`, which
     /// can discard the INVITE while the user is answering.
     static let pushWhenActive = false
 

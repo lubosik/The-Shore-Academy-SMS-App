@@ -551,6 +551,7 @@ final class TelnyxVoiceManager: NSObject {
     // MARK: - Outbound
 
     func startOutgoingCall(to destination: String) {
+        let dialNumber = PhoneFormatter.e164(destination)
         onMain { [weak self] in
             guard let self else { return }
             guard self.currentCall == nil else {
@@ -560,7 +561,7 @@ final class TelnyxVoiceManager: NSObject {
             let uuid = UUID()
             self.currentCall = ActiveCall(id: uuid,
                                           callerName: "",
-                                          callerNumber: destination,
+                                          callerNumber: dialNumber,
                                           isInbound: false,
                                           phase: .connecting,
                                           startedAt: Date())
@@ -568,7 +569,7 @@ final class TelnyxVoiceManager: NSObject {
             // interact correctly with the system audio session. If the
             // transaction is rejected the action never reaches the provider,
             // so clean up here or currentCall stays wedged.
-            CallKitCoordinator.shared.startOutgoingCall(uuid: uuid, handle: destination) { [weak self] in
+            CallKitCoordinator.shared.startOutgoingCall(uuid: uuid, handle: dialNumber) { [weak self] in
                 self?.clearCall(uuid)
             }
         }
@@ -899,6 +900,16 @@ extension TelnyxVoiceManager: CallKitActionHandler {
                 return
             }
 
+            // The registration wait can finish after CallKit has timed out or
+            // the user has ended the call. In that case this action must not
+            // start a real PSTN call in the background.
+            let stillCurrent = await withCheckedContinuation { continuation in
+                self.onMain {
+                    continuation.resume(returning: self.currentCall?.id == action.callUUID)
+                }
+            }
+            guard stillCurrent else { return }
+
             do {
                 let callerNumber = CredentialStore.get(.callerNumber) ?? ""
                 _ = try self.telnyxClient.newCall(callerName: AppConfig.callKitDisplayName,
@@ -913,6 +924,13 @@ extension TelnyxVoiceManager: CallKitActionHandler {
                 self.clearCall(action.callUUID)
             }
         }
+    }
+
+    func callKitStartTimedOut(uuid: UUID) {
+        // CallKit has already abandoned this transaction. Never let a late
+        // registration callback dial anyway or leave a phantom call on screen.
+        CallKitCoordinator.shared.forgetCall(uuid)
+        clearCall(uuid)
     }
 
     func callKitSetMuted(uuid: UUID, muted: Bool) {

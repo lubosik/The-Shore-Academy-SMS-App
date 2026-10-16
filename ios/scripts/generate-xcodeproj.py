@@ -37,7 +37,7 @@ SPM_URL         = "https://github.com/team-telnyx/telnyx-webrtc-ios"
 # Package.swift publishes this product name; the Swift module it contains is
 # still imported as TelnyxRTC in application source.
 SPM_PRODUCT     = "telnyx-webrtc-ios"
-SPM_EXACT_VERSION = "4.1.2"
+SPM_EXACT_VERSION = "4.2.2"
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 IOS_DIR = os.path.abspath(os.path.join(HERE, ".."))
