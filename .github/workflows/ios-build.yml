@@ -44,6 +44,12 @@ jobs:
           python3 ios/scripts/generate-xcodeproj.py
           git diff --exit-code -- ios/ShoreInbox.xcodeproj
 
+      - name: Check long SMS conversion
+        run: |
+          swiftc ios/ShoreInbox/Core/SMSSegmenter.swift ios/scripts/SMSSegmenterSmoke.swift \
+            -o "$RUNNER_TEMP/sms-segmenter-smoke"
+          "$RUNNER_TEMP/sms-segmenter-smoke"
+
       - name: Build for iOS Simulator without signing
         run: |
           xcodebuild build \
