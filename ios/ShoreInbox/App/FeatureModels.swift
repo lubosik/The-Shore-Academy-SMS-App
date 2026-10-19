@@ -56,6 +56,7 @@ final class InboxModel: ObservableObject {
         isSending = true
         defer { isSending = false }
         do {
+            let sendText = try SMSSegmenter.prepared(trimmed, hasMedia: !imageData.isEmpty)
             var urls: [String] = []
             let selectedImages = Array(imageData.prefix(4))
             // Telnyx allows each file below 1 MB and the combined payload below
@@ -73,7 +74,7 @@ final class InboxModel: ObservableObject {
             }
             try await APIClient.shared.sendMessage(
                 to: phone,
-                message: trimmed,
+                message: sendText,
                 mediaURLs: urls,
                 replyToMessageID: message?.numericID
             )

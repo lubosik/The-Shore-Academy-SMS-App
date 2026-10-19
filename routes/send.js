@@ -3,6 +3,7 @@ const { sendSMS } = require('../telnyx');
 const { formatPhone, isOptedOut } = require('../lib/compliance');
 const { normaliseTelnyxStatus } = require('../lib/message-status');
 const { recordOutboundInGhl, sendOutboundViaGhl } = require('../lib/ghl-writeback');
+const { prepareSms } = require('../lib/sms-segments');
 
 module.exports = (broadcastSSE) => {
   const router = require('express').Router();
@@ -24,6 +25,15 @@ module.exports = (broadcastSSE) => {
         return res.status(403).json({ error: 'This contact opted out of messages' });
       }
 
+      let prepared;
+      try {
+        prepared = prepareSms(text, { hasMedia: media.length > 0 });
+      } catch (error) {
+        if (error.code === 'sms_too_long') return res.status(400).json({ error: error.message });
+        throw error;
+      }
+      const sendText = prepared.text;
+
       // GHL is Shore's system of record. By default it owns the single send
       // and hands delivery to its configured Telnyx provider, which makes the
       // message exist in the exact GHL conversation immediately. `telnyx` is
@@ -32,8 +42,8 @@ module.exports = (broadcastSSE) => {
       const outboundMode = String(process.env.GHL_OUTBOUND_MODE || 'ghl').toLowerCase();
       const throughGhl = outboundMode !== 'telnyx';
       const provider = throughGhl
-        ? await sendOutboundViaGhl(normalisedTo, text, media)
-        : await sendSMS(normalisedTo, text, media.length ? media : null);
+        ? await sendOutboundViaGhl(normalisedTo, sendText, media)
+        : await sendSMS(normalisedTo, sendText, media.length ? media : null);
 
       if (provider?.skipped) {
         throw new Error(`GHL send unavailable: ${provider.skipped}`);
@@ -57,7 +67,7 @@ module.exports = (broadcastSSE) => {
           ghl_message_id: throughGhl ? messageId : null,
           contact_phone: normalisedTo,
           direction: 'outbound',
-          body: text,
+          body: sendText,
           status: normaliseTelnyxStatus(providerStatus),
           media_urls: mediaRecord,
           reply_to_message_id: replyTo,
@@ -77,14 +87,14 @@ module.exports = (broadcastSSE) => {
       // never re-sent: this uses /messages/outbound, not /messages, which would
       // deliver the text a second time.
       if (!throughGhl) {
-        recordOutboundInGhl(normalisedTo, text, media)
+        recordOutboundInGhl(normalisedTo, sendText, media)
           .catch(err => console.error('[GHL-WB] outbound:', err.message));
       }
 
       broadcastSSE({
         type: 'new_message',
         phone: normalisedTo,
-        body: text,
+        body: sendText,
         direction: 'outbound',
         id: inserted?.id || null,
         telnyx_message_id: throughGhl ? null : messageId,
@@ -97,7 +107,9 @@ module.exports = (broadcastSSE) => {
         success: true,
         messageId,
         id: inserted?.id || null,
-        provider: throughGhl ? 'ghl' : 'telnyx'
+        provider: throughGhl ? 'ghl' : 'telnyx',
+        smartEncodingApplied: prepared.changed,
+        segments: prepared.segments.count
       });
     } catch (err) {
       console.error('Send error:', err.message);
